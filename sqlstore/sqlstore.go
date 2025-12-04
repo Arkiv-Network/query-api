@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/Arkiv-Network/query-api/query"
+	"github.com/Arkiv-Network/query-api/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -49,8 +49,8 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 	ctx context.Context,
 	queryStr string,
 	args []any,
-	options query.QueryOptions,
-	iterator func(*query.EntityData, *query.Cursor) error,
+	options *query.QueryOptions,
+	iterator func(*types.EntityData, *types.Cursor) error,
 ) error {
 	s.log.Info("Executing query", "query", queryStr, "args", args)
 
@@ -94,27 +94,51 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 		}
 
 		var (
-			key       *[]byte
-			payload   *[]byte
-			fromBlock *uint64
+			key            *[]byte
+			payload        *[]byte
+			fromBlock      *uint64
+			owner          *[]byte
+			expiresAt      *uint64
+			createdAtBlock *uint64
+			sequence       *uint64
+			numericAttrs   *[]byte
+			stringAttrs    *[]byte
 		)
 		dest := []any{}
 		columns := map[string]any{}
-		for _, column := range options.AllColumns() {
-			switch column {
+		for _, column := range options.Columns {
+			switch column.Name {
 			case "entity_key":
 				dest = append(dest, &key)
-				columns[column] = &key
+				columns[column.Name] = &key
 			case "from_block":
 				dest = append(dest, &fromBlock)
-				columns[column] = &fromBlock
+				columns[column.Name] = &fromBlock
 			case "payload":
 				dest = append(dest, &payload)
-				columns[column] = &payload
+				columns[column.Name] = &payload
+			case "owner":
+				dest = append(dest, &owner)
+				columns[column.Name] = &owner
+			case "expires_at":
+				dest = append(dest, &expiresAt)
+				columns[column.Name] = &expiresAt
+			case "created_at_block":
+				dest = append(dest, &createdAtBlock)
+				columns[column.Name] = &createdAtBlock
+			case "sequence":
+				dest = append(dest, &sequence)
+				columns[column.Name] = &sequence
+			case "string_attributes":
+				dest = append(dest, &stringAttrs)
+				columns[column.Name] = &stringAttrs
+			case "numeric_attributes":
+				dest = append(dest, &numericAttrs)
+				columns[column.Name] = &numericAttrs
 			default:
 				var value any
 				dest = append(dest, &value)
-				columns[column] = &value
+				columns[column.Name] = &value
 			}
 		}
 
@@ -131,83 +155,87 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 		if payload != nil {
 			value = *payload
 		}
+		var ownerAddress *common.Address
+		if owner != nil {
+			addr := common.BytesToAddress(*owner)
+			ownerAddress = &addr
+		}
 
-		r := query.EntityData{
-			Value:             value,
-			StringAttributes:  []query.StringAnnotation{},
-			NumericAttributes: []query.NumericAnnotation{},
+		r := types.EntityData{
+			Value:     value,
+			Owner:     ownerAddress,
+			ExpiresAt: expiresAt,
 		}
 
 		// We check whether the key was actually requested, since it's always included
 		// in the query because of sorting
-		_, wantsKey := options.Columns["entity_key"]
-		if wantsKey {
+		if options.IncludeData.Key {
 			r.Key = keyHash
 		}
 
-		cursor := query.Cursor{
+		if options.IncludeData.LastModifiedAtBlock && sequence != nil {
+			// we need the upper 32 bits
+			val := *sequence >> 32
+			r.LastModifiedAtBlock = &val
+		}
+		if options.IncludeData.TransactionIndexInBlock && sequence != nil {
+			// we need bits 16 to 32, so we shift right by 16 and then mask with
+			// a bit string of 16 ones (subtract one from 2^17)
+			val := (*sequence >> 16) & ((1 << 16) - 1)
+			r.TransactionIndexInBlock = &val
+		}
+		if options.IncludeData.OperationIndexInTransaction && sequence != nil {
+			// get the lower 16 bits by applying the same bit mask
+			val := (*sequence) & ((1 << 16) - 1)
+			r.OperationIndexInTransaction = &val
+		}
+
+		if options.IncludeData.Attributes {
+			if stringAttrs != nil {
+				attrs := make(map[string]string)
+				err := json.Unmarshal(*stringAttrs, &attrs)
+				if err != nil {
+					return fmt.Errorf("error unmarshalling string attributes: %w", err)
+				}
+				r.StringAttributes = make([]types.StringAnnotation, 0, len(attrs))
+				for k, v := range attrs {
+					if options.IncludeData.SyntheticAttributes || !strings.HasPrefix(k, "$") {
+						r.StringAttributes = append(r.StringAttributes, types.StringAnnotation{
+							Key:   k,
+							Value: v,
+						})
+					}
+				}
+			}
+			if numericAttrs != nil {
+				attrs := make(map[string]uint64)
+				err := json.Unmarshal(*numericAttrs, &attrs)
+				if err != nil {
+					return fmt.Errorf("error unmarshalling string attributes: %w", err)
+				}
+				r.NumericAttributes = make([]types.NumericAnnotation, 0, len(attrs))
+				for k, v := range attrs {
+					if options.IncludeData.SyntheticAttributes || !strings.HasPrefix(k, "$") {
+						r.NumericAttributes = append(r.NumericAttributes, types.NumericAnnotation{
+							Key:   k,
+							Value: v,
+						})
+					}
+				}
+			}
+		}
+
+		cursor := types.Cursor{
 			BlockNumber:  options.AtBlock,
-			ColumnValues: make([]query.CursorValue, 0, len(options.OrderByColumns())),
+			ColumnValues: make([]types.CursorValue, 0, len(options.OrderBy)),
 		}
 
-		for _, column := range options.OrderByColumns() {
-			cursor.ColumnValues = append(cursor.ColumnValues, query.CursorValue{
-				ColumnName: column.Name,
-				Value:      columns[column.Name],
-				Descending: column.Descending,
+		for _, o := range options.OrderBy {
+			cursor.ColumnValues = append(cursor.ColumnValues, types.CursorValue{
+				ColumnName: o.Column.Name,
+				Value:      columns[o.Column.Name],
+				Descending: o.Descending,
 			})
-		}
-
-		if options.IncludeAnnotations {
-			s.log.Info("fetching string attributes")
-			strAttrRows, err := s.pool.Query(
-				queryCtx,
-				"SELECT key, value FROM string_attributes WHERE entity_key = $1 AND from_block = $2",
-				keyHash.Bytes(),
-				fromBlock,
-			)
-			if err != nil {
-				return fmt.Errorf("error fetching string attributes: %w", err)
-			}
-			strAttrs, err := pgx.CollectRows(strAttrRows, pgx.RowToStructByName[query.StringAnnotation])
-			if err != nil {
-				return fmt.Errorf("error fetching string attributes: %w", err)
-			}
-
-			// Convert string annotations
-			for _, attr := range strAttrs {
-				if options.IncludeSyntheticAnnotations || !strings.HasPrefix(attr.Key, "$") {
-					r.StringAttributes = append(r.StringAttributes, query.StringAnnotation{
-						Key:   attr.Key,
-						Value: attr.Value,
-					})
-				}
-			}
-
-			s.log.Info("fetching numerical attributes")
-			numAttrRows, err := s.pool.Query(
-				queryCtx,
-				"SELECT key, value FROM numeric_attributes WHERE entity_key = $1 AND from_block = $2",
-				keyHash.Bytes(),
-				fromBlock,
-			)
-			if err != nil {
-				return fmt.Errorf("error fetching numeric attributes: %w", err)
-			}
-			numAttrs, err := pgx.CollectRows(numAttrRows, pgx.RowToStructByName[query.NumericAnnotation])
-			if err != nil {
-				return fmt.Errorf("error fetching numeric attributes: %w", err)
-			}
-
-			// Convert numeric annotations
-			for _, attr := range numAttrs {
-				if options.IncludeSyntheticAnnotations || !strings.HasPrefix(attr.Key, "$") {
-					r.NumericAttributes = append(r.NumericAttributes, query.NumericAnnotation{
-						Key:   attr.Key,
-						Value: uint64(attr.Value),
-					})
-				}
-			}
 		}
 
 		err = iterator(&r, &cursor)

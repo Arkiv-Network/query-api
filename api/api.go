@@ -11,102 +11,8 @@ import (
 
 	"github.com/Arkiv-Network/query-api/query"
 	"github.com/Arkiv-Network/query-api/sqlstore"
+	"github.com/Arkiv-Network/query-api/types"
 )
-
-type IncludeData struct {
-	Key                         bool `json:"key"`
-	Attributes                  bool `json:"attributes"`
-	SyntheticAttributes         bool `json:"syntheticAttributes"`
-	Payload                     bool `json:"payload"`
-	ContentType                 bool `json:"contentType"`
-	Expiration                  bool `json:"expiration"`
-	Owner                       bool `json:"owner"`
-	CreatedAtBlock              bool `json:"createdAtBlock"`
-	LastModifiedAtBlock         bool `json:"lastModifiedAtBlock"`
-	TransactionIndexInBlock     bool `json:"transactionIndexInBlock"`
-	OperationIndexInTransaction bool `json:"operationIndexInTransaction"`
-}
-
-type QueryOptions struct {
-	AtBlock        *uint64                   `json:"atBlock"`
-	IncludeData    *IncludeData              `json:"includeData"`
-	OrderBy        []query.OrderByAnnotation `json:"orderBy"`
-	ResultsPerPage uint64                    `json:"resultsPerPage"`
-	Cursor         string                    `json:"cursor"`
-}
-
-var defaultColumns map[string]string
-
-func init() {
-	columns := []string{
-		"entity_key",
-		"from_block",
-	}
-
-	defaultColumns = make(map[string]string, len(columns))
-	for _, column := range columns {
-		defaultColumns[column] = column
-	}
-}
-
-func (options *QueryOptions) toInternalQueryOptions() (*internalQueryOptions, error) {
-	switch {
-	case options == nil:
-		return &internalQueryOptions{
-			Columns:            defaultColumns,
-			IncludeAnnotations: true,
-		}, nil
-	case options.IncludeData == nil:
-		return &internalQueryOptions{
-			Columns:            defaultColumns,
-			IncludeAnnotations: true,
-			OrderBy:            options.OrderBy,
-			AtBlock:            options.AtBlock,
-			Cursor:             options.Cursor,
-		}, nil
-	default:
-		iq := internalQueryOptions{
-			Columns:                     map[string]string{},
-			OrderBy:                     options.OrderBy,
-			AtBlock:                     options.AtBlock,
-			Cursor:                      options.Cursor,
-			IncludeAnnotations:          options.IncludeData.Attributes,
-			IncludeSyntheticAnnotations: options.IncludeData.SyntheticAttributes,
-		}
-		if options.IncludeData.Key {
-			column := "entity_key"
-			iq.Columns[column] = column
-		}
-		if options.IncludeData.Payload {
-			column := "payload"
-			iq.Columns[column] = column
-		}
-		if options.IncludeData.ContentType {
-		}
-		if options.IncludeData.Expiration {
-		}
-		if options.IncludeData.Owner {
-		}
-		if options.IncludeData.CreatedAtBlock {
-		}
-		if options.IncludeData.LastModifiedAtBlock {
-		}
-		if options.IncludeData.TransactionIndexInBlock {
-		}
-		if options.IncludeData.OperationIndexInTransaction {
-		}
-		return &iq, nil
-	}
-}
-
-type internalQueryOptions struct {
-	AtBlock                     *uint64                   `json:"atBlock"`
-	IncludeAnnotations          bool                      `json:"includeAnnotations"`
-	IncludeSyntheticAnnotations bool                      `json:"includeSyntheticAnnotations"`
-	Columns                     map[string]string         `json:"columns"`
-	OrderBy                     []query.OrderByAnnotation `json:"orderBy"`
-	Cursor                      string                    `json:"cursor"`
-}
 
 type arkivAPI struct {
 	store *sqlstore.SQLStore
@@ -157,8 +63,8 @@ func (api *arkivAPI) ensureBlockPresent(ctx context.Context, block uint64) error
 func (api *arkivAPI) Query(
 	ctx context.Context,
 	req string,
-	op *QueryOptions,
-) (*query.QueryResponse, error) {
+	op *types.QueryOptions,
+) (*types.QueryResponse, error) {
 
 	// Without this, the RPC handler swallows panics
 	// TODO: how does geth handle this??
@@ -183,8 +89,8 @@ func (api *arkivAPI) Query(
 func (api *arkivAPI) doQuery(
 	ctx context.Context,
 	req string,
-	op *QueryOptions,
-) (*query.QueryResponse, error) {
+	op *types.QueryOptions,
+) (*types.QueryResponse, error) {
 
 	if op != nil {
 		api.log.Info("query options", "options", *op)
@@ -198,7 +104,7 @@ func (api *arkivAPI) doQuery(
 		return nil, fmt.Errorf("failed to parse query: %w", err)
 	}
 
-	options, err := op.toInternalQueryOptions()
+	options, err := op.ToInternalQueryOptions()
 	if err != nil {
 		return nil, err
 	}
@@ -208,48 +114,28 @@ func (api *arkivAPI) doQuery(
 	if err != nil {
 		return nil, err
 	}
-	block := latestHead
 
-	queryOptions := query.QueryOptions{
-		Log: api.log,
-
-		IncludeAnnotations:          options.IncludeAnnotations,
-		IncludeSyntheticAnnotations: options.IncludeSyntheticAnnotations,
-		Columns:                     options.Columns,
-		OrderBy:                     options.OrderBy,
+	queryOptions, err := query.NewQueryOptions(api.log, latestHead, options)
+	if err != nil {
+		return nil, err
 	}
-
-	if len(options.Cursor) != 0 {
-		offset, err := queryOptions.DecodeCursor(options.Cursor)
-		if err != nil {
-			return nil, err
-		}
-		block = offset.BlockNumber
-		queryOptions.Cursor = offset.ColumnValues
-	}
-
-	if options.AtBlock != nil {
-		block = *options.AtBlock
-	}
-
-	queryOptions.AtBlock = block
 
 	api.log.Info("final query options", "options", queryOptions)
 
-	evaluatedQuery, err := expr.Evaluate(&queryOptions)
+	evaluatedQuery, err := expr.Evaluate(queryOptions)
 	if err != nil {
 		return nil, err
 	}
 
 	api.log.Info("evaluated query")
 
-	latestCursor := &query.Cursor{}
-	response := &query.QueryResponse{
-		BlockNumber: block,
+	latestCursor := &types.Cursor{}
+	response := &types.QueryResponse{
+		BlockNumber: queryOptions.AtBlock,
 		Data:        make([]json.RawMessage, 0),
 	}
 
-	err = api.ensureBlockPresent(ctx, block)
+	err = api.ensureBlockPresent(ctx, queryOptions.AtBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +165,7 @@ func (api *arkivAPI) doQuery(
 		evaluatedQuery.Query,
 		evaluatedQuery.Args,
 		queryOptions,
-		func(entity *query.EntityData, cursor *query.Cursor) error {
+		func(entity *types.EntityData, cursor *types.Cursor) error {
 
 			ed, err := json.Marshal(entity)
 			if err != nil {
