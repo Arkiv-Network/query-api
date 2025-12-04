@@ -25,8 +25,6 @@ type SQLStore struct {
 }
 
 func NewSQLStore(dbURL string, log *slog.Logger) (*SQLStore, error) {
-
-	log.Info("Connecting to database", "url", dbURL)
 	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
