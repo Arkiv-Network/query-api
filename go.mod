@@ -6,6 +6,7 @@ require (
 	github.com/alecthomas/participle/v2 v2.1.4
 	github.com/ethereum/go-ethereum v1.16.7
 	github.com/jackc/pgx/v5 v5.7.6
+	github.com/urfave/cli/v2 v2.27.7
 )
 
 require (
@@ -23,7 +24,6 @@ require (
 	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
-	github.com/urfave/cli/v2 v2.27.7 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/sync v0.13.0 // indirect
