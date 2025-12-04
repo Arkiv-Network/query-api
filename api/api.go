@@ -146,10 +146,10 @@ func (api *arkivAPI) doQuery(
 
 	// 512 kb
 	maxResponseSize := 512 * 1024 * 1024
-	maxResultsPerPage := 0
+	maxResultsPerPage := query.QueryResultCountLimit
 
-	if op != nil {
-		maxResultsPerPage = int(op.ResultsPerPage)
+	if op != nil && op.ResultsPerPage > 0 {
+		maxResultsPerPage = op.ResultsPerPage
 		api.log.Info("query max results per page", "value", maxResultsPerPage)
 	}
 
@@ -159,6 +159,8 @@ func (api *arkivAPI) doQuery(
 		elapsed := time.Since(startTime)
 		api.log.Info("query execution time", "elapsed", elapsed)
 	}()
+
+	needsCursor := false
 
 	err = api.store.QueryEntitiesInternalIterator(
 		ctx,
@@ -177,11 +179,8 @@ func (api *arkivAPI) doQuery(
 			latestCursor = cursor
 
 			newLen := responseSize + len(ed) + 1
-			if newLen > maxResponseSize {
-				return sqlstore.ErrStopIteration
-			}
-
-			if maxResultsPerPage > 0 && len(response.Data) >= maxResultsPerPage {
+			if newLen > maxResponseSize || uint64(len(response.Data)) >= maxResultsPerPage {
+				needsCursor = true
 				return sqlstore.ErrStopIteration
 			}
 
@@ -192,14 +191,16 @@ func (api *arkivAPI) doQuery(
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
 
-	// Always include a cursor, the iteration might have terminated because we hit
-	// the limit on the query.
-	// The client should launch one more request and see whether there are results in it
-	cursor, err := queryOptions.EncodeCursor(latestCursor)
-	if err != nil {
-		return nil, fmt.Errorf("could not encode cursor: %w", err)
+	if needsCursor {
+		// Always include a cursor, the iteration might have terminated because we hit
+		// the limit on the query.
+		// The client should launch one more request and see whether there are more results
+		cursor, err := queryOptions.EncodeCursor(latestCursor)
+		if err != nil {
+			return nil, fmt.Errorf("could not encode cursor: %w", err)
+		}
+		response.Cursor = &cursor
 	}
-	response.Cursor = &cursor
 
 	api.log.Info("query number of results", "value", len(response.Data))
 	return response, nil
