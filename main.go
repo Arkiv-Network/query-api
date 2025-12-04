@@ -1,54 +1,93 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"time"
 
 	"github.com/Arkiv-Network/query-api/api"
 	"github.com/Arkiv-Network/query-api/sqlstore"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/urfave/cli/v2"
 )
-
-type QueryAPI struct {
-	log *slog.Logger
-}
-
-func (s *QueryAPI) Add(a int, b *int) int {
-	if b == nil {
-		s.log.Info("Add", "a", a, "b", "nil")
-		return a
-	}
-	s.log.Info("Add", "a", a, "b", *b)
-	return a + *b
-}
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	// TODO remove password
-	store, err := sqlstore.NewSQLStore(
-		"host=::1 port=5432 dbname=query user=query password=",
-		log,
-	)
-	if err != nil {
-		log.Error("Error running API server", "error", err)
-		os.Exit(1)
+	cfg := struct {
+		dbURL string
+		addr  string
+	}{}
+
+	app := &cli.App{
+		Name:  "query-api",
+		Usage: "Arkiv Query API server",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:        "db-url",
+				Usage:       "PostgreSQL connection string",
+				EnvVars:     []string{"DB_URL"},
+				Required:    true,
+				Destination: &cfg.dbURL,
+			},
+			&cli.StringFlag{
+				Name:        "addr",
+				Usage:       "HTTP server listen address",
+				EnvVars:     []string{"ADDR"},
+				Value:       ":8087",
+				Destination: &cfg.addr,
+			},
+		},
+		Action: func(c *cli.Context) error {
+
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+			defer cancel()
+
+			store, err := sqlstore.NewSQLStore(cfg.dbURL, log)
+			if err != nil {
+				return fmt.Errorf("failed to connect to database: %w", err)
+			}
+			arkivAPI := api.NewArkivAPI(store, log)
+
+			log.Info("starting RPC API server", "addr", cfg.addr)
+			srv := rpc.NewServer()
+			err = srv.RegisterName("arkiv", arkivAPI)
+			if err != nil {
+				return fmt.Errorf("failed to register RPC service: %w", err)
+			}
+
+			mux := http.NewServeMux()
+
+			mux.Handle("POST /", srv)
+			server := &http.Server{
+				Addr:    cfg.addr,
+				Handler: mux,
+			}
+
+			context.AfterFunc(ctx, func() {
+				shutdownCtx, shutdownCtxCancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer shutdownCtxCancel()
+				err := server.Shutdown(shutdownCtx)
+				if err != nil {
+					log.Warn("Error shutting down server", "error", err)
+					server.Close()
+				}
+			})
+
+			err = server.ListenAndServe()
+			if err != nil {
+				return fmt.Errorf("server error: %w", err)
+			}
+
+			return nil
+		},
 	}
-	api := api.NewArkivAPI(store, log)
 
-	// TODO
-	httpAddr := ":8087"
-
-	log.Info("starting RPC API server", "addr", httpAddr)
-	srv := rpc.NewServer()
-	srv.RegisterName("arkiv", api)
-	http.DefaultServeMux.Handle("/api", srv)
-	httpsrv := http.Server{Addr: httpAddr, Handler: http.DefaultServeMux}
-
-	err = httpsrv.ListenAndServe()
-
-	if err != nil {
+	if err := app.Run(os.Args); err != nil {
 		log.Error("Error running API server", "error", err)
 		os.Exit(1)
 	}
