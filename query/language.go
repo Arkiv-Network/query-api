@@ -15,10 +15,15 @@ import (
 )
 
 const AnnotationIdentRegex string = `[\p{L}_][\p{L}\p{N}_]*`
+const QueryResultCountLimit uint64 = 1000
 
 type Column struct {
-	Name     string
-	selector string
+	Name          string
+	QualifiedName string
+}
+
+func (c Column) selector() string {
+	return fmt.Sprintf("%s AS %s", c.QualifiedName, c.Name)
 }
 
 func (a Column) Compare(b Column) int {
@@ -56,64 +61,61 @@ func NewQueryOptions(log *slog.Logger, latestHead uint64, options *types.Interna
 
 	// We always need the primary key of the payloads table because of sorting
 	queryOptions.Columns = append(queryOptions.Columns, Column{
-		Name:     "from_block",
-		selector: "e.from_block AS from_block",
+		Name:          "from_block",
+		QualifiedName: "e.from_block",
 	})
 	queryOptions.Columns = append(queryOptions.Columns, Column{
-		Name:     "entity_key",
-		selector: "e.entity_key AS entity_key",
+		Name:          "entity_key",
+		QualifiedName: "e.entity_key",
 	})
 
 	if options.IncludeData.Payload {
 		queryOptions.Columns = append(queryOptions.Columns, Column{
-			Name:     "payload",
-			selector: "e.payload AS payload",
+			Name:          "payload",
+			QualifiedName: "e.payload",
 		})
 	}
 	if options.IncludeData.ContentType {
 		queryOptions.Columns = append(queryOptions.Columns, Column{
-			Name:     "content_type",
-			selector: "e.content_type AS content_type",
+			Name:          "content_type",
+			QualifiedName: "e.content_type",
 		})
 	}
 	if options.IncludeData.Attributes {
 		queryOptions.Columns = append(queryOptions.Columns, Column{
-			Name:     "string_attributes",
-			selector: "e.string_attributes AS string_attributes",
+			Name:          "string_attributes",
+			QualifiedName: "e.string_attributes",
 		})
 		queryOptions.Columns = append(queryOptions.Columns, Column{
-			Name:     "numeric_attributes",
-			selector: "e.numeric_attributes AS numeric_attributes",
+			Name:          "numeric_attributes",
+			QualifiedName: "e.numeric_attributes",
 		})
 	}
 
 	for i := range options.OrderBy {
 		name := fmt.Sprintf("arkiv_annotation_sorting%d_value", i)
 		queryOptions.Columns = append(queryOptions.Columns, Column{
-			Name: name,
-			selector: fmt.Sprintf(
-				"arkiv_annotation_sorting%d.value AS arkiv_annotation_sorting%d_value",
-				i, i,
-			),
+			Name:          name,
+			QualifiedName: fmt.Sprintf("arkiv_annotation_sorting%d.value", i),
 		})
 	}
 
 	if options.IncludeData.Owner {
 		queryOptions.Columns = append(queryOptions.Columns, Column{
-			Name:     "owner",
-			selector: "ownerAttrs.Value AS owner",
+			Name:          "owner",
+			QualifiedName: "ownerAttrs.Value",
 		})
 	}
 	if options.IncludeData.Expiration {
 		queryOptions.Columns = append(queryOptions.Columns, Column{
-			Name:     "expires_at",
-			selector: "expirationAttrs.Value AS expires_at",
+			Name:          "expires_at",
+			QualifiedName: "expirationAttrs.Value",
 		})
 	}
 	if options.IncludeData.CreatedAtBlock {
 		queryOptions.Columns = append(queryOptions.Columns, Column{
-			Name:     "created_at_block",
-			selector: "createdAtBlockAttrs.Value AS created_at_block",
+			Name:          "created_at_block",
+			QualifiedName: "createdAtBlockAttrs.Value",
 		})
 	}
 	// TODO derive these from the sequence
@@ -121,8 +123,8 @@ func NewQueryOptions(log *slog.Logger, latestHead uint64, options *types.Interna
 		options.IncludeData.TransactionIndexInBlock ||
 		options.IncludeData.OperationIndexInTransaction {
 		queryOptions.Columns = append(queryOptions.Columns, Column{
-			Name:     "sequence",
-			selector: "sequenceAttrs.Value AS sequence",
+			Name:          "sequence",
+			QualifiedName: "sequenceAttrs.Value",
 		})
 	}
 
@@ -134,25 +136,22 @@ func NewQueryOptions(log *slog.Logger, latestHead uint64, options *types.Interna
 	for i, o := range queryOptions.OrderByAnnotations {
 		queryOptions.OrderBy = append(queryOptions.OrderBy, OrderBy{
 			Column: Column{
-				Name: fmt.Sprintf("arkiv_annotation_sorting%d_value", i),
-				selector: fmt.Sprintf(
-					"arkiv_annotation_sorting%d.value AS arkiv_annotation_sorting%d_value",
-					i, i,
-				),
+				Name:          fmt.Sprintf("arkiv_annotation_sorting%d_value", i),
+				QualifiedName: fmt.Sprintf("arkiv_annotation_sorting%d.value", i),
 			},
 			Descending: o.Descending,
 		})
 	}
 	queryOptions.OrderBy = append(queryOptions.OrderBy, OrderBy{
 		Column: Column{
-			Name:     "from_block",
-			selector: "e.from_block",
+			Name:          "from_block",
+			QualifiedName: "e.from_block",
 		},
 	})
 	queryOptions.OrderBy = append(queryOptions.OrderBy, OrderBy{
 		Column: Column{
-			Name:     "entity_key",
-			selector: "e.entity_key",
+			Name:          "entity_key",
+			QualifiedName: "e.entity_key",
 		},
 	})
 
@@ -186,7 +185,11 @@ func (opts *QueryOptions) GetColumnIndex(column string) (int, error) {
 }
 
 func (opts *QueryOptions) EncodeCursor(cursor *types.Cursor) (string, error) {
-	opts.Log.Info("encode cursor", "cursor", *cursor)
+	bs, err := json.Marshal(cursor)
+	if err != nil {
+		return "", fmt.Errorf("error marshalling cursor: %w", err)
+	}
+	opts.Log.Info("encode cursor", "cursor", string(bs))
 	encodedCursor := make([]any, 0, len(cursor.ColumnValues)*3+1)
 
 	encodedCursor = append(encodedCursor, cursor.BlockNumber)
@@ -194,7 +197,7 @@ func (opts *QueryOptions) EncodeCursor(cursor *types.Cursor) (string, error) {
 	for _, c := range cursor.ColumnValues {
 		columnIx, err := opts.GetColumnIndex(c.ColumnName)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("could not find column index: %w", err)
 		}
 		descending := uint64(0)
 		if c.Descending {
@@ -297,7 +300,7 @@ func (opts *QueryOptions) columnString() string {
 
 	columns := make([]string, 0, len(opts.Columns))
 	for _, c := range opts.Columns {
-		columns = append(columns, c.selector)
+		columns = append(columns, c.selector())
 	}
 
 	return strings.Join(columns, ", ")
@@ -368,7 +371,7 @@ func (b *QueryBuilder) writeComma() {
 	}
 }
 
-func (b *QueryBuilder) addPaginationArguments() {
+func (b *QueryBuilder) addPaginationArguments() error {
 	paginationConditions := []string{}
 
 	if len(b.options.Cursor) > 0 {
@@ -389,9 +392,15 @@ func (b *QueryBuilder) addPaginationArguments() {
 
 				arg := b.pushArgument(from.Value)
 
+				columnIx, err := b.options.GetColumnIndex(from.ColumnName)
+				if err != nil {
+					return fmt.Errorf("error getting column index: %w", err)
+				}
+				column := b.options.Columns[columnIx]
+
 				subcondition = append(
 					subcondition,
-					fmt.Sprintf("%s %s %s", from.ColumnName, operator, arg),
+					fmt.Sprintf("%s %s %s", column.QualifiedName, operator, arg),
 				)
 			}
 
@@ -412,6 +421,8 @@ func (b *QueryBuilder) addPaginationArguments() {
 
 		b.tableBuilder.WriteString(paginationCondition)
 	}
+
+	return nil
 }
 
 func (b *QueryBuilder) createLeafQuery(query string) string {
@@ -543,7 +554,10 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 		)
 	}
 
-	builder.addPaginationArguments()
+	err := builder.addPaginationArguments()
+	if err != nil {
+		return nil, fmt.Errorf("error adding the pagination condition: %w", err)
+	}
 
 	if builder.needsWhere {
 		builder.tableBuilder.WriteString(" WHERE ")
@@ -567,7 +581,7 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 	}
 	builder.tableBuilder.WriteString(strings.Join(orderColumns, ", "))
 
-	builder.tableBuilder.WriteString(" LIMIT 1000")
+	fmt.Fprintf(builder.tableBuilder, " LIMIT %d", QueryResultCountLimit)
 
 	return &SelectQuery{
 		Query: builder.tableBuilder.String(),
