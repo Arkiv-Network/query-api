@@ -7,101 +7,13 @@ import (
 	"github.com/Arkiv-Network/query-api/types"
 )
 
-type SelectQuery struct {
-	Query string
-	Args  []any
-}
-
-type QueryBuilder struct {
-	tableBuilder *strings.Builder
-	args         []any
-	argsCount    uint32
-	tableCounter uint32
-	needsComma   bool
-	needsWhere   bool
-	options      QueryOptions
-}
-
-func (b *QueryBuilder) nextTableName() string {
-	b.tableCounter = b.tableCounter + 1
-	return fmt.Sprintf("table_%d", b.tableCounter)
-}
-
-func (b *QueryBuilder) pushArgument(arg any) string {
-	b.args = append(b.args, arg)
-	b.argsCount += 1
-	return fmt.Sprintf("$%d", b.argsCount)
-}
-
-func (b *QueryBuilder) writeComma() {
-	if b.needsComma {
-		b.tableBuilder.WriteString(", ")
-	} else {
-		b.needsComma = true
-	}
-}
-
-func (b *QueryBuilder) addPaginationArguments() error {
-	paginationConditions := []string{}
-
-	if len(b.options.Cursor) > 0 {
-		for i := range b.options.Cursor {
-			subcondition := []string{}
-			for j, from := range b.options.Cursor {
-				if j > i {
-					break
-				}
-				var operator string
-				if j < i {
-					operator = "="
-				} else if from.Descending {
-					operator = "<"
-				} else {
-					operator = ">"
-				}
-
-				arg := b.pushArgument(from.Value)
-
-				columnIx, err := b.options.GetColumnIndex(from.ColumnName)
-				if err != nil {
-					return fmt.Errorf("error getting column index: %w", err)
-				}
-				column := b.options.Columns[columnIx]
-
-				subcondition = append(
-					subcondition,
-					fmt.Sprintf("%s %s %s", column.QualifiedName, operator, arg),
-				)
-			}
-
-			paginationConditions = append(
-				paginationConditions,
-				fmt.Sprintf("(%s)", strings.Join(subcondition, " AND ")),
-			)
-		}
-
-		paginationCondition := strings.Join(paginationConditions, " OR ")
-
-		if b.needsWhere {
-			b.tableBuilder.WriteString(" WHERE ")
-			b.needsWhere = false
-		} else {
-			b.tableBuilder.WriteString(" AND ")
-		}
-
-		b.tableBuilder.WriteString(paginationCondition)
-	}
-
-	return nil
-}
-
 func (b *QueryBuilder) createLeafQuery(query string) string {
 	tableName := b.nextTableName()
 	b.writeComma()
-	b.tableBuilder.WriteString(tableName)
-	b.tableBuilder.WriteString(" AS (")
-	b.tableBuilder.WriteString(query)
-	b.tableBuilder.WriteString(")")
+	b.queryBuilder.WriteString(tableName)
+	b.queryBuilder.WriteString(" AS (")
+	b.queryBuilder.WriteString(query)
+	b.queryBuilder.WriteString(")")
 
 	return tableName
 }
@@ -112,23 +24,14 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 
 	builder := QueryBuilder{
 		options:      *options,
-		tableBuilder: &tableBuilder,
+		queryBuilder: &tableBuilder,
 		args:         args,
 		needsComma:   false,
 		needsWhere:   true,
 	}
 
-	if t.All {
-		builder.tableBuilder.WriteString(strings.Join(
-			[]string{
-				"SELECT",
-				builder.options.columnString(),
-				"FROM payloads AS e",
-			},
-			" ",
-		))
-	} else {
-		builder.tableBuilder.WriteString(strings.Join(
+	if t.Expression != nil {
+		builder.queryBuilder.WriteString(strings.Join(
 			[]string{
 				" SELECT",
 				builder.options.columnString(),
@@ -138,11 +41,20 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 			},
 			" ",
 		))
+	} else {
+		builder.queryBuilder.WriteString(strings.Join(
+			[]string{
+				"SELECT",
+				builder.options.columnString(),
+				"FROM payloads AS e",
+			},
+			" ",
+		))
 	}
 
 	if builder.options.IncludeData.Owner {
-		fmt.Fprintf(builder.tableBuilder,
-			" LEFT JOIN string_attributes AS ownerAttrs"+
+		fmt.Fprintf(builder.queryBuilder,
+			" INNER JOIN string_attributes AS ownerAttrs"+
 				" ON e.entity_key = ownerAttrs.entity_key"+
 				" AND e.from_block = ownerAttrs.from_block"+
 				" AND ownerAttrs.key = '%s'",
@@ -150,8 +62,8 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 		)
 	}
 	if builder.options.IncludeData.Expiration {
-		fmt.Fprintf(builder.tableBuilder,
-			" LEFT JOIN numeric_attributes AS expirationAttrs"+
+		fmt.Fprintf(builder.queryBuilder,
+			" INNER JOIN numeric_attributes AS expirationAttrs"+
 				" ON e.entity_key = expirationAttrs.entity_key"+
 				" AND e.from_block = expirationAttrs.from_block"+
 				" AND expirationAttrs.key = '%s'",
@@ -159,8 +71,8 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 		)
 	}
 	if builder.options.IncludeData.CreatedAtBlock {
-		fmt.Fprintf(builder.tableBuilder,
-			" LEFT JOIN numeric_attributes AS createdAtBlockAttrs"+
+		fmt.Fprintf(builder.queryBuilder,
+			" INNER JOIN numeric_attributes AS createdAtBlockAttrs"+
 				" ON e.entity_key = createdAtBlockAttrs.entity_key"+
 				" AND e.from_block = createdAtBlockAttrs.from_block"+
 				" AND createdAtBlockAttrs.key = '%s'",
@@ -170,8 +82,8 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 	if builder.options.IncludeData.LastModifiedAtBlock ||
 		options.IncludeData.TransactionIndexInBlock ||
 		options.IncludeData.OperationIndexInTransaction {
-		fmt.Fprintf(builder.tableBuilder,
-			" LEFT JOIN numeric_attributes AS sequenceAttrs"+
+		fmt.Fprintf(builder.queryBuilder,
+			" INNER JOIN numeric_attributes AS sequenceAttrs"+
 				" ON e.entity_key = sequenceAttrs.entity_key"+
 				" AND e.from_block = sequenceAttrs.from_block"+
 				" AND sequenceAttrs.key = '%s'",
@@ -194,7 +106,7 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 
 		keyPlaceholder := builder.pushArgument(orderBy.Name)
 
-		fmt.Fprintf(builder.tableBuilder,
+		fmt.Fprintf(builder.queryBuilder,
 			" LEFT JOIN %[1]s AS %s"+
 				" ON %[2]s.entity_key = e.entity_key"+
 				" AND %[2]s.from_block = e.from_block"+
@@ -212,16 +124,16 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 	}
 
 	if builder.needsWhere {
-		builder.tableBuilder.WriteString(" WHERE ")
+		builder.queryBuilder.WriteString(" WHERE ")
 		builder.needsWhere = false
 	} else {
-		builder.tableBuilder.WriteString(" AND ")
+		builder.queryBuilder.WriteString(" AND ")
 	}
 
 	blockArg := builder.pushArgument(builder.options.AtBlock)
-	fmt.Fprintf(builder.tableBuilder, "%s BETWEEN e.from_block AND e.to_block", blockArg)
+	fmt.Fprintf(builder.queryBuilder, "%s BETWEEN e.from_block AND e.to_block", blockArg)
 
-	builder.tableBuilder.WriteString(" ORDER BY ")
+	builder.queryBuilder.WriteString(" ORDER BY ")
 
 	orderColumns := make([]string, 0, len(builder.options.OrderBy))
 	for _, o := range builder.options.OrderBy {
@@ -231,28 +143,28 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 		}
 		orderColumns = append(orderColumns, o.Column.Name+suffix)
 	}
-	builder.tableBuilder.WriteString(strings.Join(orderColumns, ", "))
+	builder.queryBuilder.WriteString(strings.Join(orderColumns, ", "))
 
-	fmt.Fprintf(builder.tableBuilder, " LIMIT %d", QueryResultCountLimit)
+	fmt.Fprintf(builder.queryBuilder, " LIMIT %d", QueryResultCountLimit)
 
 	return &SelectQuery{
-		Query: builder.tableBuilder.String(),
+		Query: builder.queryBuilder.String(),
 		Args:  builder.args,
 	}, nil
 }
 
 func (e *Expression) Evaluate(builder *QueryBuilder) string {
-	builder.tableBuilder.WriteString("WITH ")
+	builder.queryBuilder.WriteString("WITH ")
 	prevTable := e.Or.Evaluate(builder)
 
 	builder.writeComma()
 	nextTable := builder.nextTableName()
 
-	builder.tableBuilder.WriteString(nextTable)
-	builder.tableBuilder.WriteString(" AS (")
-	builder.tableBuilder.WriteString("SELECT DISTINCT * FROM ")
-	builder.tableBuilder.WriteString(prevTable)
-	builder.tableBuilder.WriteString(")")
+	builder.queryBuilder.WriteString(nextTable)
+	builder.queryBuilder.WriteString(" AS (")
+	builder.queryBuilder.WriteString("SELECT DISTINCT * FROM ")
+	builder.queryBuilder.WriteString(prevTable)
+	builder.queryBuilder.WriteString(")")
 
 	return nextTable
 }
@@ -267,14 +179,14 @@ func (e *OrExpression) Evaluate(b *QueryBuilder) string {
 
 		b.writeComma()
 
-		b.tableBuilder.WriteString(tableName)
-		b.tableBuilder.WriteString(" AS (")
-		b.tableBuilder.WriteString("SELECT * FROM ")
-		b.tableBuilder.WriteString(leftTable)
-		b.tableBuilder.WriteString(" UNION ")
-		b.tableBuilder.WriteString("SELECT * FROM ")
-		b.tableBuilder.WriteString(rightTable)
-		b.tableBuilder.WriteString(")")
+		b.queryBuilder.WriteString(tableName)
+		b.queryBuilder.WriteString(" AS (")
+		b.queryBuilder.WriteString("SELECT * FROM ")
+		b.queryBuilder.WriteString(leftTable)
+		b.queryBuilder.WriteString(" UNION ")
+		b.queryBuilder.WriteString("SELECT * FROM ")
+		b.queryBuilder.WriteString(rightTable)
+		b.queryBuilder.WriteString(")")
 
 		// Carry forward the cumulative result of the UNION
 		leftTable = tableName
@@ -297,14 +209,14 @@ func (e *AndExpression) Evaluate(b *QueryBuilder) string {
 
 		b.writeComma()
 
-		b.tableBuilder.WriteString(tableName)
-		b.tableBuilder.WriteString(" AS (")
-		b.tableBuilder.WriteString("SELECT * FROM ")
-		b.tableBuilder.WriteString(leftTable)
-		b.tableBuilder.WriteString(" INTERSECT ")
-		b.tableBuilder.WriteString("SELECT * FROM ")
-		b.tableBuilder.WriteString(rightTable)
-		b.tableBuilder.WriteString(")")
+		b.queryBuilder.WriteString(tableName)
+		b.queryBuilder.WriteString(" AS (")
+		b.queryBuilder.WriteString("SELECT * FROM ")
+		b.queryBuilder.WriteString(leftTable)
+		b.queryBuilder.WriteString(" INTERSECT ")
+		b.queryBuilder.WriteString("SELECT * FROM ")
+		b.queryBuilder.WriteString(rightTable)
+		b.queryBuilder.WriteString(")")
 
 		// Carry forward the cumulative result of the INTERSECT
 		leftTable = tableName

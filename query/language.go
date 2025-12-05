@@ -41,18 +41,16 @@ var lex = lexer.MustSimple([]lexer.SimpleRule{
 })
 
 type TopLevel struct {
-	Expression *Expression `parser:"@@"`
-	All        bool        `parser:"| @(All | Star)"`
+	Expression *Expression `parser:"@@ | All | Star"`
 }
 
 func (t *TopLevel) Normalise() *TopLevel {
-	if t.All {
-		return t
+	if t.Expression != nil {
+		return &TopLevel{
+			Expression: t.Expression.Normalise(),
+		}
 	}
-	return &TopLevel{
-		Expression: t.Expression.Normalise(),
-		All:        t.All,
-	}
+	return t
 }
 
 // Expression is the top-level rule.

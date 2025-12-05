@@ -122,7 +122,7 @@ func (api *arkivAPI) doQuery(
 
 	api.log.Info("final query options", "options", queryOptions)
 
-	evaluatedQuery, err := expr.Evaluate(queryOptions)
+	evaluatedQuery, err := expr.Evaluate2(queryOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -148,10 +148,10 @@ func (api *arkivAPI) doQuery(
 	maxResponseSize := 512 * 1024 * 1024
 	maxResultsPerPage := query.QueryResultCountLimit
 
-	if op != nil && op.ResultsPerPage > 0 {
+	if op != nil && op.ResultsPerPage > 0 && op.ResultsPerPage < query.QueryResultCountLimit {
 		maxResultsPerPage = op.ResultsPerPage
-		api.log.Info("query max results per page", "value", maxResultsPerPage)
 	}
+	api.log.Info("query max results per page", "value", maxResultsPerPage)
 
 	startTime := time.Now()
 

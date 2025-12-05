@@ -10,7 +10,7 @@ import (
 	"github.com/Arkiv-Network/query-api/types"
 )
 
-const QueryResultCountLimit uint64 = 1000
+const QueryResultCountLimit uint64 = 200
 
 type Column struct {
 	Name          string
