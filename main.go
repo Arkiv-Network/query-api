@@ -12,15 +12,18 @@ import (
 	"github.com/Arkiv-Network/query-api/api"
 	"github.com/Arkiv-Network/query-api/sqlstore"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	cfg := struct {
-		dbURL string
-		addr  string
+		dbURL       string
+		addr        string
+		metricsAddr string
 	}{}
 
 	app := &cli.App{
@@ -40,6 +43,13 @@ func main() {
 				EnvVars:     []string{"ADDR"},
 				Value:       ":8087",
 				Destination: &cfg.addr,
+			},
+			&cli.StringFlag{
+				Name:        "metrics-addr",
+				Usage:       "Metrics server listen address (empty to disable)",
+				EnvVars:     []string{"METRICS_ADDR"},
+				Value:       ":9090",
+				Destination: &cfg.metricsAddr,
 			},
 		},
 		Action: func(c *cli.Context) error {
@@ -68,22 +78,59 @@ func main() {
 				Handler: mux,
 			}
 
-			context.AfterFunc(ctx, func() {
-				shutdownCtx, shutdownCtxCancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer shutdownCtxCancel()
-				err := server.Shutdown(shutdownCtx)
-				if err != nil {
-					log.Warn("Error shutting down server", "error", err)
-					server.Close()
-				}
-			})
-
-			err = server.ListenAndServe()
-			if err != nil {
-				return fmt.Errorf("server error: %w", err)
+			// Start metrics server if configured
+			var metricsServer *http.Server
+			metricsMux := http.NewServeMux()
+			metricsMux.Handle("/metrics", promhttp.Handler())
+			metricsServer = &http.Server{
+				Addr:    cfg.metricsAddr,
+				Handler: metricsMux,
 			}
 
-			return nil
+			eg, egCtx := errgroup.WithContext(ctx)
+			eg.Go(func() error {
+				context.AfterFunc(ctx, func() {
+					shutdownCtx, shutdownCtxCancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer shutdownCtxCancel()
+
+					if metricsServer != nil {
+						err := metricsServer.Shutdown(shutdownCtx)
+						if err != nil {
+							log.Warn("Error shutting down metrics server", "error", err)
+						}
+						metricsServer.Close()
+					}
+				})
+
+				log.Info("starting metrics server", "addr", cfg.metricsAddr)
+				err := metricsServer.ListenAndServe()
+				if err != nil && err != http.ErrServerClosed {
+					return fmt.Errorf("metrics server error: %w", err)
+				}
+				return nil
+			})
+
+			eg.Go(func() error {
+				context.AfterFunc(egCtx, func() {
+					shutdownCtx, shutdownCtxCancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer shutdownCtxCancel()
+
+					err := server.Shutdown(shutdownCtx)
+					if err != nil {
+						log.Warn("Error shutting down server", "error", err)
+						server.Close()
+					}
+				})
+				log.Info("starting  server", "addr", cfg.addr)
+				err = server.ListenAndServe()
+				if err != nil {
+					return fmt.Errorf("server error: %w", err)
+				}
+				return nil
+			})
+
+			return eg.Wait()
+
 		},
 	}
 
