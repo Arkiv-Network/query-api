@@ -166,7 +166,7 @@ func (api *arkivAPI) doQuery(
 	defer func() {
 		elapsed := time.Since(startTime)
 		queryDuration.Observe(elapsed.Seconds())
-		api.log.Info("query execution time", "elapsed", elapsed)
+		api.log.Info("query execution time", "seconds", elapsed.Seconds(), "query", req)
 	}()
 
 	needsCursor := false
