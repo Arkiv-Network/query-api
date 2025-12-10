@@ -1,8 +1,8 @@
 package sqlstore
 
 import (
-	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,9 +11,7 @@ import (
 	"time"
 
 	"github.com/Arkiv-Network/query-api/query"
-	"github.com/Arkiv-Network/query-api/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var ErrStopIteration = errors.New("stop iteration")
@@ -21,26 +19,167 @@ var ErrStopIteration = errors.New("stop iteration")
 type SQLStore struct {
 	log *slog.Logger
 
-	pool *pgxpool.Pool
+	db *sql.DB
 }
 
-func NewSQLStore(dbURL string, log *slog.Logger) (*SQLStore, error) {
-	pool, err := pgxpool.New(context.Background(), dbURL)
+func NewSQLStoreFromDB(db *sql.DB, log *slog.Logger) *SQLStore {
+	return &SQLStore{
+		log: log,
+		db:  db,
+	}
+}
+
+func NewSQLStore(dbDriver string, dbURL string, log *slog.Logger) (*SQLStore, error) {
+	db, err := sql.Open(dbDriver, dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	return &SQLStore{
-		log:  log,
-		pool: pool,
-	}, nil
+	return NewSQLStoreFromDB(db, log), nil
 }
 
 func (s *SQLStore) GetLatestHead(ctx context.Context) (uint64, error) {
-	row := s.pool.QueryRow(ctx, "SELECT BLOCK FROM last_block LIMIT 1")
+	row := s.db.QueryRowContext(ctx, "SELECT block FROM last_block LIMIT 1")
 	var block uint64
 	row.Scan(&block)
 	return block, nil
+}
+
+func (s *SQLStore) EnsureBlockPresent(ctx context.Context, block uint64) error {
+	// In case the query should be run on a block that we don't have yet,
+	// we wait for a little bit to see if we receive the block.
+	latestHead, err := s.GetLatestHead(ctx)
+	if err != nil {
+		return err
+	}
+
+	if block > latestHead {
+		// TODO
+		//var cadence time.Duration
+		//if latestHead <= 1 {
+		//	// For block 1, we cannot deduce the cadence, so we just assume 2 seconds
+		//	cadence = 2 * time.Second
+		//} else {
+		//	cadence = time.Duration(
+		//		latestsHead.Time-api.eth.blockchain.GetHeaderByHash(latestsHead.ParentHash).Time,
+		//	) * time.Second
+		//}
+
+		cadence := 2 * time.Second
+
+		time.Sleep(2 * time.Duration(cadence) * time.Second)
+		latestHead, err = s.GetLatestHead(ctx)
+		if err != nil {
+			return err
+		}
+		if block > latestHead {
+			return fmt.Errorf("requested block is in the future")
+		}
+	}
+	return nil
+}
+
+func (s *SQLStore) QueryEntities(
+	ctx context.Context,
+	req string,
+	op *query.Options,
+) (*query.QueryResponse, error) {
+
+	if op != nil {
+		s.log.Info("query options", "options", *op)
+		if op.IncludeData != nil {
+			s.log.Info("query options", "includeData", *op.IncludeData)
+		}
+	}
+
+	expr, err := query.Parse(req, s.log)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse query: %w", err)
+	}
+
+	options, err := op.ToInternalQueryOptions()
+	if err != nil {
+		return nil, err
+	}
+	s.log.Info("internal query options", "options", *options)
+
+	latestHead, err := s.GetLatestHead(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	queryOptions, err := query.NewQueryOptions(s.log, latestHead, options)
+	if err != nil {
+		return nil, err
+	}
+
+	s.log.Info("final query options", "options", queryOptions)
+
+	evaluatedQuery, err := expr.Evaluate2(queryOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	s.log.Info("evaluated query")
+
+	latestCursor := &query.Cursor{}
+	response := &query.QueryResponse{
+		BlockNumber: queryOptions.AtBlock,
+		Data:        make([]json.RawMessage, 0),
+	}
+
+	err = s.EnsureBlockPresent(ctx, queryOptions.AtBlock)
+	if err != nil {
+		return nil, err
+	}
+
+	maxResultsPerPage := query.QueryResultCountLimit
+	if op != nil && op.ResultsPerPage > 0 && op.ResultsPerPage < query.QueryResultCountLimit {
+		maxResultsPerPage = op.ResultsPerPage
+	}
+	s.log.Info("query max results per page", "value", maxResultsPerPage)
+
+	needsCursor := false
+
+	err = s.QueryEntitiesInternalIterator(
+		ctx,
+		evaluatedQuery.Query,
+		evaluatedQuery.Args,
+		queryOptions,
+		func(entity *query.EntityData, cursor *query.Cursor) error {
+
+			ed, err := json.Marshal(entity)
+			if err != nil {
+				return fmt.Errorf("failed to marshal entity: %w", err)
+			}
+
+			// We always add the last obtained result, and set the latest obtained cursor value
+			response.Data = append(response.Data, ed)
+			latestCursor = cursor
+
+			newLen := query.ResponseSize + len(ed) + 1
+			if newLen > query.MaxResponseSize || uint64(len(response.Data)) >= maxResultsPerPage {
+				needsCursor = true
+				return ErrStopIteration
+			}
+
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+
+	if needsCursor {
+		cursor, err := queryOptions.EncodeCursor(latestCursor)
+		if err != nil {
+			return nil, fmt.Errorf("could not encode cursor: %w", err)
+		}
+		response.Cursor = &cursor
+	}
+
+	s.log.Info("query number of results", "value", len(response.Data))
+	return response, nil
 }
 
 func (s *SQLStore) QueryEntitiesInternalIterator(
@@ -48,37 +187,14 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 	queryStr string,
 	args []any,
 	options *query.QueryOptions,
-	iterator func(*types.EntityData, *types.Cursor) error,
+	iterator func(*query.EntityData, *query.Cursor) error,
 ) error {
 	s.log.Info("Executing query", "query", queryStr, "args", args)
-
-	startTime := time.Now()
-	defer func() {
-		elapsed := time.Since(startTime)
-		if elapsed.Seconds() > 1 {
-			row := s.pool.QueryRow(ctx, fmt.Sprintf("EXPLAIN (FORMAT JSON) %s", queryStr), args...)
-
-			var (
-				jsonPlan string
-			)
-
-			err := row.Scan(&jsonPlan)
-			if err != nil {
-				s.log.Error("failed to get query plan", "err", err)
-				return
-			}
-
-			dst := bytes.Buffer{}
-			json.Compact(&dst, []byte(jsonPlan))
-
-			s.log.Info("query plan", "plan", dst.String())
-		}
-	}()
 
 	queryCtx, queryCtxCancel := context.WithCancel(ctx)
 	defer queryCtxCancel()
 
-	rows, err := s.pool.Query(queryCtx, queryStr, args...)
+	rows, err := s.db.QueryContext(queryCtx, queryStr, args...)
 	if err != nil {
 		return fmt.Errorf("failed to get entities for query: %s: %w", queryStr, err)
 	}
@@ -159,7 +275,7 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 			ownerAddress = &addr
 		}
 
-		r := types.EntityData{
+		r := query.EntityData{
 			Value:     value,
 			Owner:     ownerAddress,
 			ExpiresAt: expiresAt,
@@ -195,10 +311,10 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 				if err != nil {
 					return fmt.Errorf("error unmarshalling string attributes: %w", err)
 				}
-				r.StringAttributes = make([]types.StringAnnotation, 0, len(attrs))
+				r.StringAttributes = make([]query.StringAnnotation, 0, len(attrs))
 				for k, v := range attrs {
 					if options.IncludeData.SyntheticAttributes || !strings.HasPrefix(k, "$") {
-						r.StringAttributes = append(r.StringAttributes, types.StringAnnotation{
+						r.StringAttributes = append(r.StringAttributes, query.StringAnnotation{
 							Key:   k,
 							Value: v,
 						})
@@ -211,10 +327,10 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 				if err != nil {
 					return fmt.Errorf("error unmarshalling string attributes: %w", err)
 				}
-				r.NumericAttributes = make([]types.NumericAnnotation, 0, len(attrs))
+				r.NumericAttributes = make([]query.NumericAnnotation, 0, len(attrs))
 				for k, v := range attrs {
 					if options.IncludeData.SyntheticAttributes || !strings.HasPrefix(k, "$") {
-						r.NumericAttributes = append(r.NumericAttributes, types.NumericAnnotation{
+						r.NumericAttributes = append(r.NumericAttributes, query.NumericAnnotation{
 							Key:   k,
 							Value: v,
 						})
@@ -223,13 +339,13 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 			}
 		}
 
-		cursor := types.Cursor{
+		cursor := query.Cursor{
 			BlockNumber:  options.AtBlock,
-			ColumnValues: make([]types.CursorValue, 0, len(options.OrderBy)),
+			ColumnValues: make([]query.CursorValue, 0, len(options.OrderBy)),
 		}
 
 		for _, o := range options.OrderBy {
-			cursor.ColumnValues = append(cursor.ColumnValues, types.CursorValue{
+			cursor.ColumnValues = append(cursor.ColumnValues, query.CursorValue{
 				ColumnName: o.Column.Name,
 				Value:      columns[o.Column.Name],
 				Descending: o.Descending,

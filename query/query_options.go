@@ -6,11 +6,16 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
-
-	"github.com/Arkiv-Network/query-api/types"
 )
 
 const QueryResultCountLimit uint64 = 200
+
+// 256 bytes is for the overhead of the 'envelope' around the entity data
+// and the separator characters in between
+const ResponseSize int = 256
+
+// 512 kb
+const MaxResponseSize int = 512 * 1024 * 1024
 
 type Column struct {
 	Name          string
@@ -32,11 +37,11 @@ type OrderBy struct {
 
 type QueryOptions struct {
 	AtBlock            uint64
-	IncludeData        *types.IncludeData
+	IncludeData        *IncludeData
 	Columns            []Column
 	OrderBy            []OrderBy
-	OrderByAnnotations []types.OrderByAnnotation
-	Cursor             []types.CursorValue
+	OrderByAnnotations []OrderByAnnotation
+	Cursor             []CursorValue
 
 	// Cache the sorted list of unique columns to fetch
 	allColumnsSorted []string
@@ -45,7 +50,7 @@ type QueryOptions struct {
 	Log *slog.Logger
 }
 
-func NewQueryOptions(log *slog.Logger, latestHead uint64, options *types.InternalQueryOptions) (*QueryOptions, error) {
+func NewQueryOptions(log *slog.Logger, latestHead uint64, options *InternalQueryOptions) (*QueryOptions, error) {
 	queryOptions := QueryOptions{
 		Log:                log,
 		OrderByAnnotations: options.OrderBy,

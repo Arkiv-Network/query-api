@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-
-	"github.com/Arkiv-Network/query-api/types"
 )
 
-func (opts *QueryOptions) EncodeCursor(cursor *types.Cursor) (string, error) {
+func (opts *QueryOptions) EncodeCursor(cursor *Cursor) (string, error) {
 	bs, err := json.Marshal(cursor)
 	if err != nil {
 		return "", fmt.Errorf("error marshalling cursor: %w", err)
@@ -45,7 +43,7 @@ func (opts *QueryOptions) EncodeCursor(cursor *types.Cursor) (string, error) {
 	return hexCursor, nil
 }
 
-func (opts *QueryOptions) DecodeCursor(cursorStr string) (*types.Cursor, error) {
+func (opts *QueryOptions) DecodeCursor(cursorStr string) (*Cursor, error) {
 	if len(cursorStr) == 0 {
 		return nil, nil
 	}
@@ -55,7 +53,7 @@ func (opts *QueryOptions) DecodeCursor(cursorStr string) (*types.Cursor, error) 
 		return nil, fmt.Errorf("could not decode cursor: %w", err)
 	}
 
-	cursor := types.Cursor{}
+	cursor := Cursor{}
 
 	encoded := make([]any, 0)
 	err = json.Unmarshal(bs, &encoded)
@@ -70,7 +68,7 @@ func (opts *QueryOptions) DecodeCursor(cursorStr string) (*types.Cursor, error) 
 	blockNumber := uint64(firstValue)
 	cursor.BlockNumber = blockNumber
 
-	cursor.ColumnValues = make([]types.CursorValue, 0, len(encoded)-1)
+	cursor.ColumnValues = make([]CursorValue, 0, len(encoded)-1)
 
 	for c := range slices.Chunk(encoded[1:], 3) {
 		if len(c) != 3 {
@@ -102,7 +100,7 @@ func (opts *QueryOptions) DecodeCursor(cursorStr string) (*types.Cursor, error) 
 			return nil, fmt.Errorf("unknown value for descending: %d", descendingInt)
 		}
 
-		cursor.ColumnValues = append(cursor.ColumnValues, types.CursorValue{
+		cursor.ColumnValues = append(cursor.ColumnValues, CursorValue{
 			ColumnName: opts.Columns[columnIx].Name,
 			Value:      c[1],
 			Descending: descending,

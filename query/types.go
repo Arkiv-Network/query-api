@@ -1,4 +1,4 @@
-package types
+package query
 
 import (
 	"encoding/json"
@@ -90,7 +90,7 @@ type IncludeData struct {
 	OperationIndexInTransaction bool `json:"operationIndexInTransaction"`
 }
 
-type QueryOptions struct {
+type Options struct {
 	AtBlock        *uint64             `json:"atBlock"`
 	IncludeData    *IncludeData        `json:"includeData"`
 	OrderBy        []OrderByAnnotation `json:"orderBy"`
@@ -98,7 +98,7 @@ type QueryOptions struct {
 	Cursor         string              `json:"cursor"`
 }
 
-func (options *QueryOptions) ToInternalQueryOptions() (*InternalQueryOptions, error) {
+func (options *Options) ToInternalQueryOptions() (*InternalQueryOptions, error) {
 	switch {
 	case options == nil:
 		return &InternalQueryOptions{

@@ -3,8 +3,6 @@ package query
 import (
 	"fmt"
 	"strings"
-
-	"github.com/Arkiv-Network/query-api/types"
 )
 
 func (b *QueryBuilder) createLeafQuery(query string) string {
@@ -58,7 +56,7 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 				" ON e.entity_key = ownerAttrs.entity_key"+
 				" AND e.from_block = ownerAttrs.from_block"+
 				" AND ownerAttrs.key = '%s'",
-			types.OwnerAttributeKey,
+			OwnerAttributeKey,
 		)
 	}
 	if builder.options.IncludeData.Expiration {
@@ -67,7 +65,7 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 				" ON e.entity_key = expirationAttrs.entity_key"+
 				" AND e.from_block = expirationAttrs.from_block"+
 				" AND expirationAttrs.key = '%s'",
-			types.ExpirationAttributeKey,
+			ExpirationAttributeKey,
 		)
 	}
 	if builder.options.IncludeData.CreatedAtBlock {
@@ -76,7 +74,7 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 				" ON e.entity_key = createdAtBlockAttrs.entity_key"+
 				" AND e.from_block = createdAtBlockAttrs.from_block"+
 				" AND createdAtBlockAttrs.key = '%s'",
-			types.CreatedAtBlockKey,
+			CreatedAtBlockKey,
 		)
 	}
 	if builder.options.IncludeData.LastModifiedAtBlock ||
@@ -87,7 +85,7 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 				" ON e.entity_key = sequenceAttrs.entity_key"+
 				" AND e.from_block = sequenceAttrs.from_block"+
 				" AND sequenceAttrs.key = '%s'",
-			types.SequenceAttributeKey,
+			SequenceAttributeKey,
 		)
 	}
 
@@ -423,9 +421,9 @@ func (e *Inclusion) Evaluate(b *QueryBuilder) string {
 
 		values = make([]string, 0, len(e.Values.Strings))
 		for _, value := range e.Values.Strings {
-			if e.Var == types.OwnerAttributeKey ||
-				e.Var == types.CreatorAttributeKey ||
-				e.Var == types.KeyAttributeKey {
+			if e.Var == OwnerAttributeKey ||
+				e.Var == CreatorAttributeKey ||
+				e.Var == KeyAttributeKey {
 				values = append(values, b.pushArgument(strings.ToLower(value)))
 			} else {
 				values = append(values, b.pushArgument(value))
