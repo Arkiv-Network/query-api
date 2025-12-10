@@ -297,7 +297,7 @@ func (b *QueryBuilder) createAnnotationQuery(
 				"INNER JOIN payloads AS e",
 				"ON a.entity_key = e.entity_key",
 				"AND a.from_block = e.from_block",
-				fmt.Sprintf("AND %s BETWEEN e.from_block AND e.to_block", blockArg),
+				fmt.Sprintf("AND %s BETWEEN e.from_block AND e.to_block - 1", blockArg),
 				"WHERE",
 				whereClause,
 			},
