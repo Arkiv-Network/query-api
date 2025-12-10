@@ -137,7 +137,7 @@ func (t *TopLevel) Evaluate2(options *QueryOptions, sqlDialect string) (*SelectQ
 	}
 
 	blockArg := b.pushArgument(b.options.AtBlock)
-	fmt.Fprintf(b.queryBuilder, "%s BETWEEN e.from_block AND e.to_block", blockArg)
+	fmt.Fprintf(b.queryBuilder, "%s BETWEEN e.from_block AND e.to_block - 1", blockArg)
 
 	if t.Expression != nil {
 		if b.needsWhere {
