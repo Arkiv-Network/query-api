@@ -12,6 +12,7 @@ import (
 	"github.com/Arkiv-Network/query-api/api"
 	"github.com/Arkiv-Network/query-api/sqlstore"
 	"github.com/ethereum/go-ethereum/rpc"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
@@ -57,13 +58,12 @@ func main() {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer cancel()
 
-			store, err := sqlstore.NewSQLStore(cfg.dbURL, log)
+			store, err := sqlstore.NewSQLStore("pgx", cfg.dbURL, log)
 			if err != nil {
 				return fmt.Errorf("failed to connect to database: %w", err)
 			}
 			arkivAPI := api.NewArkivAPI(store, log)
 
-			log.Info("starting RPC API server", "addr", cfg.addr)
 			srv := rpc.NewServer()
 			err = srv.RegisterName("arkiv", arkivAPI)
 			if err != nil {
@@ -121,7 +121,7 @@ func main() {
 						server.Close()
 					}
 				})
-				log.Info("starting  server", "addr", cfg.addr)
+				log.Info("starting RPC API server", "addr", cfg.addr)
 				err = server.ListenAndServe()
 				if err != nil {
 					return fmt.Errorf("server error: %w", err)

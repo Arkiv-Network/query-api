@@ -3,8 +3,6 @@ package query
 import (
 	"fmt"
 	"strings"
-
-	"github.com/Arkiv-Network/query-api/types"
 )
 
 type AttrJoin struct {
@@ -55,7 +53,7 @@ func (t *TopLevel) Evaluate2(options *QueryOptions) (*SelectQuery, error) {
 				" ON e.entity_key = ownerAttrs.entity_key"+
 				" AND e.from_block = ownerAttrs.from_block"+
 				" AND ownerAttrs.key = '%s'",
-			types.OwnerAttributeKey,
+			OwnerAttributeKey,
 		)
 	}
 	if b.options.IncludeData.Expiration {
@@ -64,7 +62,7 @@ func (t *TopLevel) Evaluate2(options *QueryOptions) (*SelectQuery, error) {
 				" ON e.entity_key = expirationAttrs.entity_key"+
 				" AND e.from_block = expirationAttrs.from_block"+
 				" AND expirationAttrs.key = '%s'",
-			types.ExpirationAttributeKey,
+			ExpirationAttributeKey,
 		)
 	}
 	if b.options.IncludeData.CreatedAtBlock {
@@ -73,7 +71,7 @@ func (t *TopLevel) Evaluate2(options *QueryOptions) (*SelectQuery, error) {
 				" ON e.entity_key = createdAtBlockAttrs.entity_key"+
 				" AND e.from_block = createdAtBlockAttrs.from_block"+
 				" AND createdAtBlockAttrs.key = '%s'",
-			types.CreatedAtBlockKey,
+			CreatedAtBlockKey,
 		)
 	}
 	if b.options.IncludeData.LastModifiedAtBlock ||
@@ -84,7 +82,7 @@ func (t *TopLevel) Evaluate2(options *QueryOptions) (*SelectQuery, error) {
 				" ON e.entity_key = sequenceAttrs.entity_key"+
 				" AND e.from_block = sequenceAttrs.from_block"+
 				" AND sequenceAttrs.key = '%s'",
-			types.SequenceAttributeKey,
+			SequenceAttributeKey,
 		)
 	}
 
