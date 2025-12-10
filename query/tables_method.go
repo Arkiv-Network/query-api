@@ -50,43 +50,45 @@ func (t *TopLevel) Evaluate(options *QueryOptions) (*SelectQuery, error) {
 		))
 	}
 
-	if builder.options.IncludeData.Owner {
-		fmt.Fprintf(builder.queryBuilder,
-			" INNER JOIN string_attributes AS ownerAttrs"+
-				" ON e.entity_key = ownerAttrs.entity_key"+
-				" AND e.from_block = ownerAttrs.from_block"+
-				" AND ownerAttrs.key = '%s'",
-			OwnerAttributeKey,
-		)
-	}
-	if builder.options.IncludeData.Expiration {
-		fmt.Fprintf(builder.queryBuilder,
-			" INNER JOIN numeric_attributes AS expirationAttrs"+
-				" ON e.entity_key = expirationAttrs.entity_key"+
-				" AND e.from_block = expirationAttrs.from_block"+
-				" AND expirationAttrs.key = '%s'",
-			ExpirationAttributeKey,
-		)
-	}
-	if builder.options.IncludeData.CreatedAtBlock {
-		fmt.Fprintf(builder.queryBuilder,
-			" INNER JOIN numeric_attributes AS createdAtBlockAttrs"+
-				" ON e.entity_key = createdAtBlockAttrs.entity_key"+
-				" AND e.from_block = createdAtBlockAttrs.from_block"+
-				" AND createdAtBlockAttrs.key = '%s'",
-			CreatedAtBlockKey,
-		)
-	}
-	if builder.options.IncludeData.LastModifiedAtBlock ||
-		options.IncludeData.TransactionIndexInBlock ||
-		options.IncludeData.OperationIndexInTransaction {
-		fmt.Fprintf(builder.queryBuilder,
-			" INNER JOIN numeric_attributes AS sequenceAttrs"+
-				" ON e.entity_key = sequenceAttrs.entity_key"+
-				" AND e.from_block = sequenceAttrs.from_block"+
-				" AND sequenceAttrs.key = '%s'",
-			SequenceAttributeKey,
-		)
+	if builder.options.IncludeData != nil {
+		if builder.options.IncludeData.Owner {
+			fmt.Fprintf(builder.queryBuilder,
+				" INNER JOIN string_attributes AS ownerAttrs"+
+					" ON e.entity_key = ownerAttrs.entity_key"+
+					" AND e.from_block = ownerAttrs.from_block"+
+					" AND ownerAttrs.key = '%s'",
+				OwnerAttributeKey,
+			)
+		}
+		if builder.options.IncludeData.Expiration {
+			fmt.Fprintf(builder.queryBuilder,
+				" INNER JOIN numeric_attributes AS expirationAttrs"+
+					" ON e.entity_key = expirationAttrs.entity_key"+
+					" AND e.from_block = expirationAttrs.from_block"+
+					" AND expirationAttrs.key = '%s'",
+				ExpirationAttributeKey,
+			)
+		}
+		if builder.options.IncludeData.CreatedAtBlock {
+			fmt.Fprintf(builder.queryBuilder,
+				" INNER JOIN numeric_attributes AS createdAtBlockAttrs"+
+					" ON e.entity_key = createdAtBlockAttrs.entity_key"+
+					" AND e.from_block = createdAtBlockAttrs.from_block"+
+					" AND createdAtBlockAttrs.key = '%s'",
+				CreatedAtBlockKey,
+			)
+		}
+		if builder.options.IncludeData.LastModifiedAtBlock ||
+			options.IncludeData.TransactionIndexInBlock ||
+			options.IncludeData.OperationIndexInTransaction {
+			fmt.Fprintf(builder.queryBuilder,
+				" INNER JOIN numeric_attributes AS sequenceAttrs"+
+					" ON e.entity_key = sequenceAttrs.entity_key"+
+					" AND e.from_block = sequenceAttrs.from_block"+
+					" AND sequenceAttrs.key = '%s'",
+				SequenceAttributeKey,
+			)
+		}
 	}
 
 	for i, orderBy := range builder.options.OrderByAnnotations {

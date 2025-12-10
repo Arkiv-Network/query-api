@@ -56,43 +56,45 @@ func (t *TopLevel) Evaluate2(options *QueryOptions, sqlDialect string) (*SelectQ
 		}
 	}
 
-	if b.options.IncludeData.Owner {
-		fmt.Fprintf(b.queryBuilder,
-			" LEFT JOIN string_attributes AS ownerAttrs"+
-				" ON e.entity_key = ownerAttrs.entity_key"+
-				" AND e.from_block = ownerAttrs.from_block"+
-				" AND ownerAttrs.key = '%s'",
-			OwnerAttributeKey,
-		)
-	}
-	if b.options.IncludeData.Expiration {
-		fmt.Fprintf(b.queryBuilder,
-			" LEFT JOIN numeric_attributes AS expirationAttrs"+
-				" ON e.entity_key = expirationAttrs.entity_key"+
-				" AND e.from_block = expirationAttrs.from_block"+
-				" AND expirationAttrs.key = '%s'",
-			ExpirationAttributeKey,
-		)
-	}
-	if b.options.IncludeData.CreatedAtBlock {
-		fmt.Fprintf(b.queryBuilder,
-			" LEFT JOIN numeric_attributes AS createdAtBlockAttrs"+
-				" ON e.entity_key = createdAtBlockAttrs.entity_key"+
-				" AND e.from_block = createdAtBlockAttrs.from_block"+
-				" AND createdAtBlockAttrs.key = '%s'",
-			CreatedAtBlockKey,
-		)
-	}
-	if b.options.IncludeData.LastModifiedAtBlock ||
-		options.IncludeData.TransactionIndexInBlock ||
-		options.IncludeData.OperationIndexInTransaction {
-		fmt.Fprintf(b.queryBuilder,
-			" LEFT JOIN numeric_attributes AS sequenceAttrs"+
-				" ON e.entity_key = sequenceAttrs.entity_key"+
-				" AND e.from_block = sequenceAttrs.from_block"+
-				" AND sequenceAttrs.key = '%s'",
-			SequenceAttributeKey,
-		)
+	if b.options.IncludeData != nil {
+		if b.options.IncludeData.Owner {
+			fmt.Fprintf(b.queryBuilder,
+				" LEFT JOIN string_attributes AS ownerAttrs"+
+					" ON e.entity_key = ownerAttrs.entity_key"+
+					" AND e.from_block = ownerAttrs.from_block"+
+					" AND ownerAttrs.key = '%s'",
+				OwnerAttributeKey,
+			)
+		}
+		if b.options.IncludeData.Expiration {
+			fmt.Fprintf(b.queryBuilder,
+				" LEFT JOIN numeric_attributes AS expirationAttrs"+
+					" ON e.entity_key = expirationAttrs.entity_key"+
+					" AND e.from_block = expirationAttrs.from_block"+
+					" AND expirationAttrs.key = '%s'",
+				ExpirationAttributeKey,
+			)
+		}
+		if b.options.IncludeData.CreatedAtBlock {
+			fmt.Fprintf(b.queryBuilder,
+				" LEFT JOIN numeric_attributes AS createdAtBlockAttrs"+
+					" ON e.entity_key = createdAtBlockAttrs.entity_key"+
+					" AND e.from_block = createdAtBlockAttrs.from_block"+
+					" AND createdAtBlockAttrs.key = '%s'",
+				CreatedAtBlockKey,
+			)
+		}
+		if b.options.IncludeData.LastModifiedAtBlock ||
+			options.IncludeData.TransactionIndexInBlock ||
+			options.IncludeData.OperationIndexInTransaction {
+			fmt.Fprintf(b.queryBuilder,
+				" LEFT JOIN numeric_attributes AS sequenceAttrs"+
+					" ON e.entity_key = sequenceAttrs.entity_key"+
+					" AND e.from_block = sequenceAttrs.from_block"+
+					" AND sequenceAttrs.key = '%s'",
+				SequenceAttributeKey,
+			)
+		}
 	}
 
 	for i, orderBy := range b.options.OrderByAnnotations {
@@ -137,14 +139,14 @@ func (t *TopLevel) Evaluate2(options *QueryOptions, sqlDialect string) (*SelectQ
 	blockArg := b.pushArgument(b.options.AtBlock)
 	fmt.Fprintf(b.queryBuilder, "%s BETWEEN e.from_block AND e.to_block", blockArg)
 
-	if b.needsWhere {
-		b.queryBuilder.WriteString(" WHERE ")
-		b.needsWhere = false
-	} else {
-		b.queryBuilder.WriteString(" AND ")
-	}
-
 	if t.Expression != nil {
+		if b.needsWhere {
+			b.queryBuilder.WriteString(" WHERE ")
+			b.needsWhere = false
+		} else {
+			b.queryBuilder.WriteString(" AND ")
+		}
+
 		t.Expression.pushWhereConditions(&b)
 	}
 
