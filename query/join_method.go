@@ -10,7 +10,15 @@ type AttrJoin struct {
 	Alias string
 }
 
-func (t *TopLevel) Evaluate2(options *QueryOptions) (*SelectQuery, error) {
+func (t *TopLevel) Evaluate2(options *QueryOptions, sqlDialect string) (*SelectQuery, error) {
+
+	switch sqlDialect {
+	case "sqlite", "postgresql":
+		// Pass
+	default:
+		return nil, fmt.Errorf("unrecognised SQL dialect: %s", sqlDialect)
+	}
+
 	qb := strings.Builder{}
 	args := []any{}
 
@@ -20,6 +28,7 @@ func (t *TopLevel) Evaluate2(options *QueryOptions) (*SelectQuery, error) {
 		args:         args,
 		needsComma:   false,
 		needsWhere:   true,
+		sqlDialect:   sqlDialect,
 	}
 
 	b.queryBuilder.WriteString(strings.Join(
@@ -436,9 +445,17 @@ func (e *Glob) addJoins(j map[string]AttrJoin) {
 func (e *Glob) pushWhereConditions(b *QueryBuilder) {
 	argName := b.pushArgument(e.Value)
 
-	op := "~"
-	if e.IsNot {
-		op = "!~"
+	op := ""
+	if b.sqlDialect == "postgresql" {
+		op = "~"
+		if e.IsNot {
+			op = "!~"
+		}
+	} else {
+		op = "GLOB"
+		if e.IsNot {
+			op = "NOT GLOB"
+		}
 	}
 
 	fmt.Fprintf(
@@ -497,11 +514,21 @@ func (e *Inclusion) addJoins(j map[string]AttrJoin) {
 }
 
 func (e *Inclusion) pushWhereConditions(b *QueryBuilder) {
-	argName := ""
+
+	args := []any{}
 	if e.Values.Strings != nil {
-		argName = b.pushArgument(e.Values.Strings)
+		for _, s := range e.Values.Strings {
+			args = append(args, s)
+		}
 	} else {
-		argName = b.pushArgument(e.Values.Numbers)
+		for _, s := range e.Values.Numbers {
+			args = append(args, s)
+		}
+	}
+
+	argNames := []string{}
+	for _, arg := range args {
+		argNames = append(argNames, b.pushArgument(arg))
 	}
 
 	op := "IN"
@@ -511,9 +538,9 @@ func (e *Inclusion) pushWhereConditions(b *QueryBuilder) {
 
 	fmt.Fprintf(
 		b.queryBuilder,
-		"%s.value %s %s",
+		"%s.value %s (%s)",
 		attributeTableAlias(e.Var),
 		op,
-		argName,
+		strings.Join(argNames, ", "),
 	)
 }

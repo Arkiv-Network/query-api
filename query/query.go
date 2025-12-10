@@ -19,6 +19,7 @@ type QueryBuilder struct {
 	needsComma   bool
 	needsWhere   bool
 	options      QueryOptions
+	sqlDialect   string
 }
 
 func attributeTableAlias(name string) string {

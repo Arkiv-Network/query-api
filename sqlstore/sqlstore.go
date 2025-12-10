@@ -40,9 +40,12 @@ func NewSQLStore(dbDriver string, dbURL string, log *slog.Logger) (*SQLStore, er
 
 func (s *SQLStore) GetLatestHead(ctx context.Context) (uint64, error) {
 	row := s.db.QueryRowContext(ctx, "SELECT block FROM last_block LIMIT 1")
-	var block uint64
-	row.Scan(&block)
-	return block, nil
+	var block *uint64
+	err := row.Scan(&block)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch latest head: %w", err)
+	}
+	return *block, nil
 }
 
 func (s *SQLStore) EnsureBlockPresent(ctx context.Context, block uint64) error {
@@ -83,6 +86,7 @@ func (s *SQLStore) QueryEntities(
 	ctx context.Context,
 	req string,
 	op *query.Options,
+	sqlDialect string,
 ) (*query.QueryResponse, error) {
 
 	if op != nil {
@@ -115,7 +119,7 @@ func (s *SQLStore) QueryEntities(
 
 	s.log.Info("final query options", "options", queryOptions)
 
-	evaluatedQuery, err := expr.Evaluate2(queryOptions)
+	evaluatedQuery, err := expr.Evaluate2(queryOptions, sqlDialect)
 	if err != nil {
 		return nil, err
 	}

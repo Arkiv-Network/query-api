@@ -56,7 +56,7 @@ func (api *arkivAPI) Query(
 		api.log.Info("query execution time", "seconds", elapsed.Seconds(), "query", req)
 	}()
 
-	response, err := api.store.QueryEntities(ctx, req, op)
+	response, err := api.store.QueryEntities(ctx, req, op, "postgresql")
 
 	if err != nil {
 		api.log.Warn("error executing query RPC", "error", err)
