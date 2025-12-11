@@ -10,16 +10,18 @@ import (
 
 const QueryResultCountLimit uint64 = 200
 
-// 256 bytes is for the overhead of the 'envelope' around the entity data
+// ResponseSize is 256 bytes for the overhead of the 'envelope' around the entity data
 // and the separator characters in between
 const ResponseSize int = 256
 
-// 512 kb
+// MaxResponseSize is 512 kb
 const MaxResponseSize int = 512 * 1024 * 1024
 
 type Column struct {
 	Name          string
 	QualifiedName string
+	// If this is a byte column, we need to decode it when we get it from the json-encoded cursor
+	IsBytes bool
 }
 
 func (c Column) selector() string {
@@ -67,6 +69,7 @@ func NewQueryOptions(log *slog.Logger, latestHead uint64, options *InternalQuery
 	queryOptions.Columns = append(queryOptions.Columns, Column{
 		Name:          "entity_key",
 		QualifiedName: "e.entity_key",
+		IsBytes:       true,
 	})
 
 	if options.IncludeData.Payload {
@@ -151,6 +154,7 @@ func NewQueryOptions(log *slog.Logger, latestHead uint64, options *InternalQuery
 		Column: Column{
 			Name:          "entity_key",
 			QualifiedName: "e.entity_key",
+			IsBytes:       true,
 		},
 	})
 

@@ -52,6 +52,12 @@ func (b *QueryBuilder) addPaginationArguments() error {
 	paginationConditions := []string{}
 
 	if len(b.options.Cursor) > 0 {
+		// Pre-allocate argument counters so that we don't need to duplicate them below
+		args := make([]string, 0, len(b.options.Cursor))
+		for _, val := range b.options.Cursor {
+			args = append(args, b.pushArgument(val.Value))
+		}
+
 		for i := range b.options.Cursor {
 			subcondition := []string{}
 			for j, from := range b.options.Cursor {
@@ -67,7 +73,7 @@ func (b *QueryBuilder) addPaginationArguments() error {
 					operator = ">"
 				}
 
-				arg := b.pushArgument(from.Value)
+				arg := args[j]
 
 				columnIx, err := b.options.GetColumnIndex(from.ColumnName)
 				if err != nil {
@@ -96,7 +102,9 @@ func (b *QueryBuilder) addPaginationArguments() error {
 			b.queryBuilder.WriteString(" AND ")
 		}
 
+		b.queryBuilder.WriteString("(")
 		b.queryBuilder.WriteString(paginationCondition)
+		b.queryBuilder.WriteString(")")
 	}
 
 	return nil

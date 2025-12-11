@@ -1,6 +1,7 @@
 package query
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -100,9 +101,22 @@ func (opts *QueryOptions) DecodeCursor(cursorStr string) (*Cursor, error) {
 			return nil, fmt.Errorf("unknown value for descending: %d", descendingInt)
 		}
 
+		value := c[1]
+		if opts.Columns[columnIx].IsBytes {
+			encoded, ok := value.(string)
+			if !ok {
+				return nil, fmt.Errorf("failed to decode cursor, byte column is not a string")
+			}
+			decoded, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode cursor: %w", err)
+			}
+			value = decoded
+		}
+
 		cursor.ColumnValues = append(cursor.ColumnValues, CursorValue{
 			ColumnName: opts.Columns[columnIx].Name,
-			Value:      c[1],
+			Value:      value,
 			Descending: descending,
 		})
 	}

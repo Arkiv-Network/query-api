@@ -195,10 +195,7 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 ) error {
 	s.log.Info("Executing query", "query", queryStr, "args", args)
 
-	queryCtx, queryCtxCancel := context.WithCancel(ctx)
-	defer queryCtxCancel()
-
-	rows, err := s.db.QueryContext(queryCtx, queryStr, args...)
+	rows, err := s.db.QueryContext(ctx, queryStr, args...)
 	if err != nil {
 		return fmt.Errorf("failed to get entities for query: %s: %w", queryStr, err)
 	}
