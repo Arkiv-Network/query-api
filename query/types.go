@@ -7,20 +7,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-var defaultColumns map[string]string
-
-func init() {
-	columns := []string{
-		"entity_key",
-		"from_block",
-	}
-
-	defaultColumns = make(map[string]string, len(columns))
-	for _, column := range columns {
-		defaultColumns[column] = column
-	}
-}
-
 var KeyAttributeKey = "$key"
 var CreatorAttributeKey = "$creator"
 var OwnerAttributeKey = "$owner"
