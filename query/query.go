@@ -102,7 +102,9 @@ func (b *QueryBuilder) addPaginationArguments() error {
 			b.queryBuilder.WriteString(" AND ")
 		}
 
+		b.queryBuilder.WriteString("(")
 		b.queryBuilder.WriteString(paginationCondition)
+		b.queryBuilder.WriteString(")")
 	}
 
 	return nil
