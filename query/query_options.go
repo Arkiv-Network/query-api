@@ -10,11 +10,11 @@ import (
 
 const QueryResultCountLimit uint64 = 200
 
-// 256 bytes is for the overhead of the 'envelope' around the entity data
+// ResponseSize is 256 bytes for the overhead of the 'envelope' around the entity data
 // and the separator characters in between
 const ResponseSize int = 256
 
-// 512 kb
+// MaxResponseSize is 512 kb
 const MaxResponseSize int = 512 * 1024 * 1024
 
 type Column struct {
