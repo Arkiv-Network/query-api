@@ -215,7 +215,7 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 			key            *[]byte
 			payload        *[]byte
 			fromBlock      *uint64
-			owner          *[]byte
+			owner          *string
 			expiresAt      *uint64
 			createdAtBlock *uint64
 			sequence       *uint64
@@ -275,7 +275,7 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 		}
 		var ownerAddress *common.Address
 		if owner != nil {
-			addr := common.BytesToAddress(*owner)
+			addr := common.HexToAddress(*owner)
 			ownerAddress = &addr
 		}
 
