@@ -20,6 +20,8 @@ const MaxResponseSize int = 512 * 1024 * 1024
 type Column struct {
 	Name          string
 	QualifiedName string
+	// If this is a byte column, we need to decode it when we get it from the json-encoded cursor
+	IsBytes bool
 }
 
 func (c Column) selector() string {
@@ -67,6 +69,7 @@ func NewQueryOptions(log *slog.Logger, latestHead uint64, options *InternalQuery
 	queryOptions.Columns = append(queryOptions.Columns, Column{
 		Name:          "entity_key",
 		QualifiedName: "e.entity_key",
+		IsBytes:       true,
 	})
 
 	if options.IncludeData.Payload {
@@ -151,6 +154,7 @@ func NewQueryOptions(log *slog.Logger, latestHead uint64, options *InternalQuery
 		Column: Column{
 			Name:          "entity_key",
 			QualifiedName: "e.entity_key",
+			IsBytes:       true,
 		},
 	})
 
