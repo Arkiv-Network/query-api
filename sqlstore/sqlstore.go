@@ -216,6 +216,7 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 			payload        *[]byte
 			fromBlock      *uint64
 			owner          *string
+			contentType    *string
 			expiresAt      *uint64
 			createdAtBlock *uint64
 			sequence       *uint64
@@ -238,6 +239,9 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 			case "owner":
 				dest = append(dest, &owner)
 				columns[column.Name] = &owner
+			case "content_type":
+				dest = append(dest, &contentType)
+				columns[column.Name] = &contentType
 			case "expires_at":
 				dest = append(dest, &expiresAt)
 				columns[column.Name] = &expiresAt
@@ -280,9 +284,10 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 		}
 
 		r := query.EntityData{
-			Value:     value,
-			Owner:     ownerAddress,
-			ExpiresAt: expiresAt,
+			Value:       value,
+			ContentType: contentType,
+			Owner:       ownerAddress,
+			ExpiresAt:   expiresAt,
 		}
 
 		// We check whether the key was actually requested, since it's always included
