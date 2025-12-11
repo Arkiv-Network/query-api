@@ -99,21 +99,25 @@ type Options struct {
 }
 
 func (options *Options) ToInternalQueryOptions() (*InternalQueryOptions, error) {
+	defaultIncludeData := &IncludeData{
+		Key:         true,
+		Expiration:  true,
+		Owner:       true,
+		Payload:     true,
+		ContentType: true,
+		Attributes:  true,
+	}
 	switch {
 	case options == nil:
 		return &InternalQueryOptions{
-			IncludeData: &IncludeData{
-				Key: true,
-			},
+			IncludeData: defaultIncludeData,
 		}, nil
 	case options.IncludeData == nil:
 		return &InternalQueryOptions{
-			IncludeData: &IncludeData{
-				Key: true,
-			},
-			OrderBy: options.OrderBy,
-			AtBlock: options.AtBlock,
-			Cursor:  options.Cursor,
+			IncludeData: defaultIncludeData,
+			OrderBy:     options.OrderBy,
+			AtBlock:     options.AtBlock,
+			Cursor:      options.Cursor,
 		}, nil
 	default:
 		iq := InternalQueryOptions{

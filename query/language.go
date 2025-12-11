@@ -2,6 +2,7 @@ package query
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
@@ -238,7 +239,6 @@ type EqualExpr struct {
 }
 
 func (e *EqualExpr) Normalise() *EqualExpr {
-	normalised := e
 
 	if e.Paren != nil {
 		p := e.Paren.Normalise()
@@ -248,14 +248,41 @@ func (e *EqualExpr) Normalise() *EqualExpr {
 		if len(p.Nested.Or.Right) == 0 && len(p.Nested.Or.Left.Right) == 0 {
 			// This expression should already be properly normalised, we don't need to
 			// call Normalise again here
-			normalised = &p.Nested.Or.Left.Left
+			return &p.Nested.Or.Left.Left
 		} else {
-			normalised = &EqualExpr{Paren: p}
+			return &EqualExpr{Paren: p}
 		}
 	}
 
-	// Everything other than parenthesised expressions do not require further normalisation
-	return normalised
+	if e.LessThan != nil {
+		return &EqualExpr{LessThan: e.LessThan.Normalise()}
+	}
+
+	if e.LessOrEqualThan != nil {
+		return &EqualExpr{LessOrEqualThan: e.LessOrEqualThan.Normalise()}
+	}
+
+	if e.GreaterThan != nil {
+		return &EqualExpr{GreaterThan: e.GreaterThan.Normalise()}
+	}
+
+	if e.GreaterOrEqualThan != nil {
+		return &EqualExpr{GreaterOrEqualThan: e.GreaterOrEqualThan.Normalise()}
+	}
+
+	if e.Glob != nil {
+		return &EqualExpr{Glob: e.Glob.Normalise()}
+	}
+
+	if e.Assign != nil {
+		return &EqualExpr{Assign: e.Assign.Normalise()}
+	}
+
+	if e.Inclusion != nil {
+		return &EqualExpr{Inclusion: e.Inclusion.Normalise()}
+	}
+
+	panic("This should not happen!")
 }
 
 func (e *EqualExpr) invert() *EqualExpr {
@@ -325,6 +352,11 @@ type Glob struct {
 	Value string `parser:"@String"`
 }
 
+func (e *Glob) Normalise() *Glob {
+	// TODO do we need to change casing here too?
+	return e
+}
+
 func (e *Glob) invert() *Glob {
 	return &Glob{
 		Var:   e.Var,
@@ -336,6 +368,21 @@ func (e *Glob) invert() *Glob {
 type LessThan struct {
 	Var   string `parser:"@Ident Lt"`
 	Value Value  `parser:"@@"`
+}
+
+func (e *LessThan) Normalise() *LessThan {
+	switch e.Var {
+	case KeyAttributeKey, OwnerAttributeKey, CreatorAttributeKey:
+		val := strings.ToLower(*e.Value.String)
+		return &LessThan{
+			Var: e.Var,
+			Value: Value{
+				String: &val,
+			},
+		}
+	default:
+		return e
+	}
 }
 
 func (e *LessThan) invert() *GreaterOrEqualThan {
@@ -350,6 +397,21 @@ type LessOrEqualThan struct {
 	Value Value  `parser:"@@"`
 }
 
+func (e *LessOrEqualThan) Normalise() *LessOrEqualThan {
+	switch e.Var {
+	case KeyAttributeKey, OwnerAttributeKey, CreatorAttributeKey:
+		val := strings.ToLower(*e.Value.String)
+		return &LessOrEqualThan{
+			Var: e.Var,
+			Value: Value{
+				String: &val,
+			},
+		}
+	default:
+		return e
+	}
+}
+
 func (e *LessOrEqualThan) invert() *GreaterThan {
 	return &GreaterThan{
 		Var:   e.Var,
@@ -362,6 +424,21 @@ type GreaterThan struct {
 	Value Value  `parser:"@@"`
 }
 
+func (e *GreaterThan) Normalise() *GreaterThan {
+	switch e.Var {
+	case KeyAttributeKey, OwnerAttributeKey, CreatorAttributeKey:
+		val := strings.ToLower(*e.Value.String)
+		return &GreaterThan{
+			Var: e.Var,
+			Value: Value{
+				String: &val,
+			},
+		}
+	default:
+		return e
+	}
+}
+
 func (e *GreaterThan) invert() *LessOrEqualThan {
 	return &LessOrEqualThan{
 		Var:   e.Var,
@@ -372,6 +449,21 @@ func (e *GreaterThan) invert() *LessOrEqualThan {
 type GreaterOrEqualThan struct {
 	Var   string `parser:"@Ident Geqt"`
 	Value Value  `parser:"@@"`
+}
+
+func (e *GreaterOrEqualThan) Normalise() *GreaterOrEqualThan {
+	switch e.Var {
+	case KeyAttributeKey, OwnerAttributeKey, CreatorAttributeKey:
+		val := strings.ToLower(*e.Value.String)
+		return &GreaterOrEqualThan{
+			Var: e.Var,
+			Value: Value{
+				String: &val,
+			},
+		}
+	default:
+		return e
+	}
 }
 
 func (e *GreaterOrEqualThan) invert() *LessThan {
@@ -388,6 +480,21 @@ type Equality struct {
 	Value Value  `parser:"@@"`
 }
 
+func (e *Equality) Normalise() *Equality {
+	switch e.Var {
+	case KeyAttributeKey, OwnerAttributeKey, CreatorAttributeKey:
+		val := strings.ToLower(*e.Value.String)
+		return &Equality{
+			Var: e.Var,
+			Value: Value{
+				String: &val,
+			},
+		}
+	default:
+		return e
+	}
+}
+
 func (e *Equality) invert() *Equality {
 	return &Equality{
 		Var:   e.Var,
@@ -400,6 +507,24 @@ type Inclusion struct {
 	Var    string `parser:"@(Ident | Key | Owner | Creator | Expiration | Sequence)"`
 	IsNot  bool   `parser:"(@('NOT'|'not')? ('IN'|'in'))"`
 	Values Values `parser:"@@"`
+}
+
+func (e *Inclusion) Normalise() *Inclusion {
+	switch e.Var {
+	case KeyAttributeKey, OwnerAttributeKey, CreatorAttributeKey:
+		vals := make([]string, 0, len(e.Values.Strings))
+		for _, val := range e.Values.Strings {
+			vals = append(vals, strings.ToLower(val))
+		}
+		return &Inclusion{
+			Var: e.Var,
+			Values: Values{
+				Strings: vals,
+			},
+		}
+	default:
+		return e
+	}
 }
 
 func (e *Inclusion) invert() *Inclusion {
