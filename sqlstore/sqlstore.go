@@ -48,38 +48,30 @@ func (s *SQLStore) GetLatestHead(ctx context.Context) (uint64, error) {
 	return *block, nil
 }
 
+const cadence = 2 * time.Second
+
 func (s *SQLStore) EnsureBlockPresent(ctx context.Context, block uint64) error {
-	// In case the query should be run on a block that we don't have yet,
-	// we wait for a little bit to see if we receive the block.
-	latestHead, err := s.GetLatestHead(ctx)
-	if err != nil {
-		return err
-	}
 
-	if block > latestHead {
-		// TODO
-		//var cadence time.Duration
-		//if latestHead <= 1 {
-		//	// For block 1, we cannot deduce the cadence, so we just assume 2 seconds
-		//	cadence = 2 * time.Second
-		//} else {
-		//	cadence = time.Duration(
-		//		latestsHead.Time-api.eth.blockchain.GetHeaderByHash(latestsHead.ParentHash).Time,
-		//	) * time.Second
-		//}
+	for {
 
-		cadence := 2 * time.Second
-
-		time.Sleep(2 * time.Duration(cadence) * time.Second)
-		latestHead, err = s.GetLatestHead(ctx)
+		latestHead, err := s.GetLatestHead(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get latest head: %w", err)
 		}
-		if block > latestHead {
-			return fmt.Errorf("requested block is in the future")
+
+		if block <= latestHead {
+			return nil
 		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+			// wait 1/4 of the cadence - making sure we don't spin too fast but still not too slow
+		case <-time.After(cadence / 4):
+			// continue processing
+		}
+
 	}
-	return nil
 }
 
 func (s *SQLStore) QueryEntities(
