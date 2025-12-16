@@ -193,7 +193,7 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 	options *query.QueryOptions,
 	iterator func(*query.EntityData, *query.Cursor) error,
 ) error {
-	s.log.Info("Executing query", "query", queryStr, "args", args)
+	s.log.Info("Executing query", "query", queryStr, "sqlQuery", queryStr, "args", args)
 
 	rows, err := s.db.QueryContext(ctx, queryStr, args...)
 	if err != nil {
