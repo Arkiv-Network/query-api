@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"runtime/debug"
-	"time"
 
 	"github.com/Arkiv-Network/query-api/query"
 	"github.com/Arkiv-Network/query-api/sqlstore"
@@ -49,12 +48,6 @@ func (api *arkivAPI) Query(
 	}()
 
 	// TODO log query plan
-	startTime := time.Now()
-	defer func() {
-		elapsed := time.Since(startTime)
-		queryDuration.Observe(elapsed.Seconds())
-		api.log.Info("query execution time", "seconds", elapsed.Seconds(), "query", req)
-	}()
 
 	response, err := api.store.QueryEntities(ctx, req, op, "postgresql")
 
