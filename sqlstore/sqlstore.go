@@ -139,8 +139,8 @@ func (s *SQLStore) QueryEntities(
 
 	err = s.QueryEntitiesInternalIterator(
 		ctx,
-		evaluatedQuery.Query,
-		evaluatedQuery.Args,
+		req,
+		evaluatedQuery,
 		queryOptions,
 		func(entity *query.EntityData, cursor *query.Cursor) error {
 
@@ -180,16 +180,27 @@ func (s *SQLStore) QueryEntities(
 
 func (s *SQLStore) QueryEntitiesInternalIterator(
 	ctx context.Context,
-	queryStr string,
-	args []any,
+	originalQuery string,
+	evaluatedQuery *query.SelectQuery,
 	options *query.QueryOptions,
 	iterator func(*query.EntityData, *query.Cursor) error,
 ) error {
-	s.log.Info("Executing query", "query", queryStr, "sqlQuery", queryStr, "args", args)
+	s.log.Info(
+		"Executing query",
+		"query", originalQuery,
+		"sqlQuery", evaluatedQuery.Query,
+		"args", evaluatedQuery.Args,
+	)
 
-	rows, err := s.db.QueryContext(ctx, queryStr, args...)
+	startTime := time.Now()
+	defer func() {
+		elapsed := time.Since(startTime)
+		s.log.Info("query execution time", "seconds", elapsed.Seconds(), "query", originalQuery)
+	}()
+
+	rows, err := s.db.QueryContext(ctx, evaluatedQuery.Query, evaluatedQuery.Args...)
 	if err != nil {
-		return fmt.Errorf("failed to get entities for query: %s: %w", queryStr, err)
+		return fmt.Errorf("failed to get entities for query: %s: %w", originalQuery, err)
 	}
 	defer rows.Close()
 
@@ -197,7 +208,7 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 
 		err := rows.Err()
 		if err != nil {
-			return fmt.Errorf("failed to get entities for query: %s: %w", queryStr, err)
+			return fmt.Errorf("failed to get entities for query: %s: %w", originalQuery, err)
 		}
 
 		var (
@@ -254,7 +265,7 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 		}
 
 		if err := rows.Scan(dest...); err != nil {
-			return fmt.Errorf("failed to get entities for query: %s: %w", queryStr, err)
+			return fmt.Errorf("failed to get entities for query: %s: %w", originalQuery, err)
 		}
 
 		var keyHash *common.Hash
