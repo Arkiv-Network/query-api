@@ -12,9 +12,17 @@ import (
 
 	"github.com/Arkiv-Network/sqlite-store/query"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var ErrStopIteration = errors.New("stop iteration")
+
+var queryDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+	Name:    "arkiv_query_api_query_duration_seconds",
+	Help:    "Duration of database queries in seconds",
+	Buckets: prometheus.DefBuckets, // Default: .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10
+})
 
 type SQLStore struct {
 	log *slog.Logger
@@ -194,6 +202,7 @@ func (s *SQLStore) QueryEntitiesInternalIterator(
 	startTime := time.Now()
 	defer func() {
 		elapsed := time.Since(startTime)
+		queryDuration.Observe(elapsed.Seconds())
 		s.log.Info("query execution time", "seconds", elapsed.Seconds(), "query", originalQuery)
 	}()
 

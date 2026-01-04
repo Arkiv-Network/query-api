@@ -9,15 +9,7 @@ import (
 
 	"github.com/Arkiv-Network/query-api/sqlstore"
 	"github.com/Arkiv-Network/sqlite-store/query"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
-
-var queryDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-	Name:    "arkiv_query_api_query_duration_seconds",
-	Help:    "Duration of database queries in seconds",
-	Buckets: prometheus.DefBuckets, // Default: .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10
-})
 
 type arkivAPI struct {
 	store *sqlstore.SQLStore
