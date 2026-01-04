@@ -7,8 +7,8 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/Arkiv-Network/query-api/query"
 	"github.com/Arkiv-Network/query-api/sqlstore"
+	"github.com/Arkiv-Network/sqlite-store/query"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -49,7 +49,7 @@ func (api *arkivAPI) Query(
 
 	// TODO log query plan
 
-	response, err := api.store.QueryEntities(ctx, req, op, "postgresql")
+	response, err := api.store.QueryEntities(ctx, req, op)
 
 	if err != nil {
 		api.log.Warn("error executing query RPC", "error", err)

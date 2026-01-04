@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Arkiv-Network/query-api/query"
+	"github.com/Arkiv-Network/sqlite-store/query"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -78,7 +78,6 @@ func (s *SQLStore) QueryEntities(
 	ctx context.Context,
 	req string,
 	op *query.Options,
-	sqlDialect string,
 ) (*query.QueryResponse, error) {
 
 	if op != nil {
@@ -104,14 +103,14 @@ func (s *SQLStore) QueryEntities(
 		return nil, err
 	}
 
-	queryOptions, err := query.NewQueryOptions(s.log, latestHead, options)
+	queryOptions, err := NewQueryOptions(s.log, latestHead, options)
 	if err != nil {
 		return nil, err
 	}
 
 	s.log.Info("final query options", "options", queryOptions)
 
-	evaluatedQuery, err := expr.Evaluate2(queryOptions, sqlDialect)
+	evaluatedQuery, err := JoinEvaluator{}.EvaluateAST(expr, queryOptions)
 	if err != nil {
 		return nil, err
 	}
